@@ -1,0 +1,1066 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gestión de Inventario - Google Sheets</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <!-- Google Sign-In API -->
+    <script src="https://accounts.google.com/gsi/client" async defer></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <script>
+        // Variable global para la URL del script
+        let GOOGLE_APPS_SCRIPT_URL = '';
+        let requests = [];
+        let charts = {};
+        let userId = generateUniqueId();
+        let productosDisponibles = [];
+        let currentUser = {
+            name: 'Usuario',
+            email: '',
+            isAuthenticated: false,
+            isAdmin: false
+        };
+
+        // Generar ID único para el usuario
+        function generateUniqueId() {
+            return 'user_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+        }
+
+        // Cargar configuración
+        function loadConfig() {
+            const savedUrl = localStorage.getItem('googleScriptUrl');
+            if (savedUrl) {
+                GOOGLE_APPS_SCRIPT_URL = savedUrl;
+                document.getElementById('scriptUrlInput').value = savedUrl;
+                document.getElementById('currentUrl').textContent = savedUrl;
+                return true;
+            }
+            return false;
+        }
+
+        // Guardar configuración
+        function saveConfig(url) {
+            if (url && url.trim() !== '') {
+                localStorage.setItem('googleScriptUrl', url.trim());
+                GOOGLE_APPS_SCRIPT_URL = url.trim();
+                document.getElementById('currentUrl').textContent = url.trim();
+                showNotification('URL guardada correctamente', 'success');
+                return true;
+            }
+            showNotification('Por favor, ingresa una URL válida', 'error');
+            return false;
+        }
+
+        // API Google Sheets Functions
+        async function fetchFromGoogleSheets(action) {
+            if (!GOOGLE_APPS_SCRIPT_URL) {
+                showNotification('Primero configura la URL del script en Configuración', 'error');
+                return {success: false, error: 'URL no configurada'};
+            }
+
+            try {
+                // Agregar timestamp para evitar caché
+                const timestamp = new Date().getTime();
+                const url = `${GOOGLE_APPS_SCRIPT_URL}?action=${action}&t=${timestamp}`;
+                
+                console.log('Fetching from:', url);
+                const response = await fetch(url);
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status} ${response.statusText}`);
+                }
+                
+                const text = await response.text();
+                console.log('Raw response:', text);
+                
+                let data;
+                try {
+                    data = JSON.parse(text);
+                } catch (e) {
+                    throw new Error('La respuesta no es JSON válido');
+                }
+                
+                return data;
+            } catch (error) {
+                console.error(`Error fetching ${action}:`, error);
+                showNotification(`Error conectando: ${error.message}`, 'error');
+                return {success: false, error: error.message};
+            }
+        }
+
+        async function postToGoogleSheets(action, data) {
+            if (!GOOGLE_APPS_SCRIPT_URL) {
+                showNotification('Primero configura la URL del script', 'error');
+                return {success: false, error: 'URL no configurada'};
+            }
+
+            try {
+                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        action: action,
+                        ...data
+                    })
+                });
+                
+                if (!response.ok) {
+                    throw new Error(`Error HTTP: ${response.status}`);
+                }
+                
+                const result = await response.json();
+                return result;
+            } catch (error) {
+                console.error(`Error posting to ${action}:`, error);
+                showNotification(`Error enviando datos: ${error.message}`, 'error');
+                return {success: false, error: error.message};
+            }
+        }
+
+        // Verificar conexión con Google Sheets
+        async function testGoogleSheetsConnection() {
+            if (!GOOGLE_APPS_SCRIPT_URL) {
+                showNotification('Configura la URL del script primero', 'error');
+                return false;
+            }
+
+            try {
+                const result = await fetchFromGoogleSheets('testConnection');
+                if (result && result.success) {
+                    showNotification('Conexión exitosa con Google Sheets', 'success');
+                    return true;
+                } else {
+                    showNotification('Error en la conexión. Verifica la URL y los permisos.', 'error');
+                    return false;
+                }
+            } catch (error) {
+                showNotification('Error de conexión: ' + error.message, 'error');
+                return false;
+            }
+        }
+
+        // Función para manejar el login con Google
+        function handleGoogleSignIn(response) {
+            const userData = parseJwt(response.credential);
+            
+            currentUser = {
+                name: userData.name,
+                email: userData.email,
+                isAuthenticated: true,
+                isAdmin: userData.email === 'hadominguezf85@gmail.com'
+            };
+            
+            // Actualizar la interfaz con la información del usuario
+            document.getElementById('userInfo').textContent = 
+                `${currentUser.name} (${currentUser.email})`;
+            document.getElementById('userInfo').classList.remove('hidden');
+            
+            // Ocultar botón de login y mostrar opciones según rol
+            document.getElementById('googleSignInButton').classList.add('hidden');
+            document.getElementById('userRole').classList.remove('hidden');
+            
+            // Configurar vista según si es admin o no
+            if (currentUser.isAdmin) {
+                document.getElementById('userRole').value = 'administrador';
+                switchView('administrador');
+            } else {
+                document.getElementById('userRole').value = 'solicitante';
+                switchView('solicitante');
+            }
+            
+            showNotification('Sesión iniciada correctamente', 'success');
+            
+            // Cargar datos después del login
+            loadData();
+        }
+
+        // Función para parsear el JWT
+        function parseJwt(token) {
+            try {
+                return JSON.parse(atob(token.split('.')[1]));
+            } catch (e) {
+                return null;
+            }
+        }
+
+        // Función para cerrar sesión
+        function handleSignOut() {
+            currentUser = {
+                name: 'Usuario',
+                email: '',
+                isAuthenticated: false,
+                isAdmin: false
+            };
+            
+            document.getElementById('userInfo').classList.add('hidden');
+            document.getElementById('googleSignInButton').classList.remove('hidden');
+            document.getElementById('userRole').classList.add('hidden');
+            
+            // Limpiar datos
+            requests = [];
+            productosDisponibles = [];
+            
+            // Actualizar interfaz
+            updateDashboard();
+            updateRecentRequests();
+            populateReportTable([]);
+            
+            showNotification('Sesión cerrada', 'info');
+        }
+
+        // Cargar datos iniciales
+        async function loadData() {
+            if (!GOOGLE_APPS_SCRIPT_URL) {
+                showNotification('Configura la URL del script primero', 'error');
+                document.getElementById('loadingScreen').classList.add('hidden');
+                document.getElementById('configModal').classList.remove('hidden');
+                return;
+            }
+
+            if (!currentUser.isAuthenticated) {
+                showNotification('Por favor, inicia sesión primero', 'error');
+                return;
+            }
+
+            const loadingScreen = document.getElementById('loadingScreen');
+            loadingScreen.classList.remove('hidden');
+            
+            try {
+                // Cargar solicitudes
+                const solicitudesData = await fetchFromGoogleSheets('getSolicitudes');
+                if (solicitudesData && solicitudesData.success) {
+                    requests = Array.isArray(solicitudesData.data) ? solicitudesData.data.map(item => ({
+                        id: item.ID || '',
+                        date: item.Fecha || new Date().toISOString().split('T')[0],
+                        user: item.Usuario || 'Usuario',
+                        email: item.Email || '',
+                        location: item.Ubicación || '',
+                        type: item.Tipo || '',
+                        comments: item.Comentarios || '',
+                        products: typeof item.Productos === 'string' ? JSON.parse(item.Productos || '{}') : (item.Productos || {}),
+                        userId: item.UserID || ''
+                    })) : [];
+                } else {
+                    requests = [];
+                }
+
+                // Cargar productos
+                const productosData = await fetchFromGoogleSheets('getProductos');
+                if (productosData && productosData.success && Array.isArray(productosData.data)) {
+                    productosDisponibles = productosData.data
+                        .filter(p => p.Activo === true || p.Activo === 'TRUE')
+                        .map(p => p.Nombre);
+                    initProductList(productosDisponibles);
+                } else {
+                    // Usar productos por defecto si no hay en la hoja
+                    productosDisponibles = [
+                        "Maracuya Semilla", "Maracuya Premium", "Mango", "Limon", "Fresa",
+                        "Piña", "Nance", "Mora", "Tamarindo", "Tamarindo Fruta"
+                    ];
+                    initProductList(productosDisponibles);
+                }
+
+                updateDashboard();
+                updateRecentRequests();
+                populateReportTable(requests);
+                
+            } catch (error) {
+                console.error('Error loading data:', error);
+                showNotification('Error cargando datos: ' + error.message, 'error');
+            } finally {
+                loadingScreen.classList.add('hidden');
+            }
+        }
+
+        function initProductList(productNames = []) {
+            const productListContainer = document.getElementById('productList');
+            productListContainer.innerHTML = '';
+            
+            if (productNames.length === 0) {
+                productListContainer.innerHTML = '<p class="text-gray-500 text-center col-span-full">No hay productos disponibles</p>';
+                return;
+            }
+            
+            productNames.forEach(name => {
+                const productHTML = `
+                    <div class="p-4 bg-gray-50 rounded-lg border border-gray-200">
+                        <label for="prod-${name.replace(/\s+/g, '-').toLowerCase()}" class="block text-sm font-medium text-gray-700 mb-2">${name}</label>
+                        <input type="number" id="prod-${name.replace(/\s+/g, '-').toLowerCase()}" name="${name}" min="0" placeholder="0" class="w-full bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2">
+                    </div>
+                `;
+                productListContainer.insertAdjacentHTML('beforeend', productHTML);
+            });
+        }
+
+        function switchView(role) {
+            const isAdmin = role === 'administrador';
+            const adminNav = document.getElementById('adminNav');
+            const recentRequestsSection = document.getElementById('recentRequestsSection');
+            const userRoleSelect = document.getElementById('userRole');
+            
+            adminNav.classList.toggle('hidden', !isAdmin);
+            recentRequestsSection.classList.toggle('hidden', isAdmin);
+            userRoleSelect.value = role;
+            
+            if (isAdmin) {
+                switchTab('dashboard');
+            } else {
+                switchTab('solicitud');
+            }
+        }
+
+        function switchTab(targetTab) {
+            const tabs = document.querySelectorAll('[data-tab]');
+            const tabContents = document.querySelectorAll('.tab-content');
+            
+            tabs.forEach(tab => {
+                const link = tab;
+                if (link.dataset.tab === targetTab) {
+                    link.classList.remove('tab-inactive');
+                    link.classList.add('tab-active');
+                } else {
+                    link.classList.remove('tab-active');
+                    link.classList.add('tab-inactive');
+                }
+            });
+
+            tabContents.forEach(content => {
+                content.classList.toggle('hidden', content.id !== targetTab);
+            });
+        }
+
+        function updateDashboard() {
+            const thirtyDaysAgo = new Date();
+            thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+            
+            const recentRequests = requests.filter(r => {
+                try {
+                    const requestDate = new Date(r.date);
+                    return requestDate >= thirtyDaysAgo;
+                } catch (e) {
+                    return false;
+                }
+            });
+
+            document.getElementById('kpi-total-requests').textContent = recentRequests.length;
+
+            const productCounts = {};
+            const locationCounts = {};
+            
+            recentRequests.forEach(r => {
+                locationCounts[r.location] = (locationCounts[r.location] || 0) + 1;
+                if (r.products && typeof r.products === 'object') {
+                    Object.entries(r.products).forEach(([name, qty]) => {
+                        productCounts[name] = (productCounts[name] || 0) + (Number(qty) || 0);
+                    });
+                }
+            });
+
+            const topProduct = Object.entries(productCounts).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('kpi-top-product').textContent = topProduct ? `${topProduct[0]} (${topProduct[1]})` : '-';
+
+            const topLocation = Object.entries(locationCounts).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('kpi-top-location').textContent = topLocation ? `${topLocation[0]} (${topLocation[1]})` : '-';
+
+            renderLocationChart(locationCounts);
+            renderProductChart(productCounts);
+            renderActivityChart(recentRequests);
+        }
+        
+        function renderChart(canvasId, type, data, options) {
+            const ctx = document.getElementById(canvasId);
+            if (!ctx) return;
+            
+            if (charts[canvasId]) {
+                charts[canvasId].destroy();
+            }
+            
+            charts[canvasId] = new Chart(ctx.getContext('2d'), { 
+                type, 
+                data, 
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    ...options
+                }
+            });
+        }
+        
+        function renderLocationChart(locationCounts) {
+            const labels = Object.keys(locationCounts);
+            const data = Object.values(locationCounts);
+            
+            if (labels.length === 0) {
+                document.getElementById('locationChart').closest('.chart-container').innerHTML = '<p class="text-gray-500 text-center py-10">No hay datos de ubicaciones</p>';
+                return;
+            }
+            
+            renderChart('locationChart', 'doughnut', {
+                labels,
+                datasets: [{
+                    label: 'Solicitudes',
+                    data,
+                    backgroundColor: ['#3b82f6', '#10b981', '#f97316', '#8b5cf6', '#ec4899', '#06b6d4', '#ef4444', '#a855f7'],
+                    hoverOffset: 4
+                }]
+            });
+        }
+
+        function renderProductChart(productCounts) {
+            const sortedProducts = Object.entries(productCounts).sort((a, b) => b[1] - a[1]).slice(0, 5);
+            
+            if (sortedProducts.length === 0) {
+                document.getElementById('productChart').closest('.chart-container').innerHTML = '<p class="text-gray-500 text-center py-10">No hay datos de productos</p>';
+                return;
+            }
+            
+            renderChart('productChart', 'bar', {
+                labels: sortedProducts.map(p => p[0]),
+                datasets: [{
+                    label: 'Cantidad Total Solicitada',
+                    data: sortedProducts.map(p => p[1]),
+                    backgroundColor: '#3b82f6'
+                }]
+            }, { indexAxis: 'y' });
+        }
+
+        function renderActivityChart(recentRequests) {
+            const activity = {};
+            const today = new Date();
+            
+            // Inicializar los últimos 30 días
+            for(let i = 29; i >= 0; i--) {
+                const d = new Date(today);
+                d.setDate(d.getDate() - i);
+                const dateStr = d.toISOString().split('T')[0];
+                activity[dateStr] = 0;
+            }
+            
+            // Contar solicitudes por día
+            recentRequests.forEach(r => {
+                if (r.date && activity.hasOwnProperty(r.date)) {
+                    activity[r.date] = (activity[r.date] || 0) + 1;
+                }
+            });
+            
+            const labels = Object.keys(activity);
+            const data = Object.values(activity);
+            
+            if (data.filter(val => val > 0).length === 0) {
+                document.getElementById('activityChart').closest('.chart-container').innerHTML = '<p class="text-gray-500 text-center py-10">No hay actividad reciente</p>';
+                return;
+            }
+            
+            renderChart('activityChart', 'line', {
+                labels: labels,
+                datasets: [{
+                    label: 'Solicitudes por Día',
+                    data: data,
+                    fill: false,
+                    borderColor: '#3b82f6',
+                    tension: 0.1
+                }]
+            });
+        }
+
+        async function handleFormSubmit(e) {
+            e.preventDefault();
+            
+            if (!currentUser.isAuthenticated) {
+                showNotification('Por favor, inicia sesión primero', 'error');
+                return;
+            }
+            
+            const submitButton = document.querySelector('#requestForm button[type="submit"]');
+            const originalButtonText = submitButton.textContent;
+            
+            try {
+                submitButton.disabled = true;
+                submitButton.textContent = 'Enviando...';
+                
+                const requestForm = document.getElementById('requestForm');
+                const formData = new FormData(requestForm);
+                const products = {};
+                
+                for (let [name, value] of formData.entries()) {
+                    if (value > 0 && name !== 'requestDate' && name !== 'location' && name !== 'requestType' && name !== 'comments') {
+                        products[name] = parseInt(value, 10);
+                    }
+                }
+                
+                if (Object.keys(products).length === 0) {
+                    showNotification("Por favor, agregue al menos un producto.", 'error');
+                    return;
+                }
+
+                const newRequest = {
+                    date: document.getElementById('requestDate').value,
+                    user: currentUser.name,
+                    email: currentUser.email,
+                    location: document.getElementById('location').value,
+                    type: document.getElementById('requestType').value,
+                    comments: document.getElementById('comments').value,
+                    products: products,
+                    userId: userId
+                };
+                
+                const result = await postToGoogleSheets('addSolicitud', newRequest);
+                if (result.success) {
+                    requestForm.reset();
+                    document.getElementById('requestDate').value = new Date().toISOString().split('T')[0];
+                    showNotification('Solicitud enviada con éxito!', 'success');
+                    // Recargar datos
+                    await loadData();
+                } else {
+                    showNotification('Error al enviar la solicitud: ' + (result.error || 'Error desconocido'), 'error');
+                }
+            } catch (error) {
+                console.error("Error adding request:", error);
+                showNotification('Error al enviar la solicitud: ' + error.message, 'error');
+            } finally {
+                submitButton.disabled = false;
+                submitButton.textContent = originalButtonText;
+            }
+        }
+        
+        function showNotification(message, type = 'success') {
+            const notification = document.getElementById('notification');
+            notification.textContent = message;
+            
+            // Cambiar colores según el tipo
+            if (type === 'error') {
+                notification.classList.remove('bg-green-500', 'bg-blue-500');
+                notification.classList.add('bg-red-500');
+            } else if (type === 'info') {
+                notification.classList.remove('bg-green-500', 'bg-red-500');
+                notification.classList.add('bg-blue-500');
+            } else {
+                notification.classList.remove('bg-red-500', 'bg-blue-500');
+                notification.classList.add('bg-green-500');
+            }
+            
+            notification.classList.remove('opacity-0', 'invisible');
+            notification.classList.add('opacity-100', 'visible');
+            
+            setTimeout(() => {
+                notification.classList.remove('opacity-100', 'visible');
+                notification.classList.add('opacity-0', 'invisible');
+            }, 3000);
+        }
+
+        function updateRecentRequests() {
+            const userRequests = requests.filter(r => r.email === currentUser.email).slice(0, 5);
+            const tbody = document.getElementById('recentRequestsTableBody');
+            tbody.innerHTML = '';
+            
+            if (userRequests.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center p-4">No has realizado solicitudes.</td></tr>';
+                return;
+            }
+            
+            userRequests.forEach(r => {
+                const productSummary = Object.entries(r.products || {}).map(([name, qty]) => `${name} (${qty})`).join(', ');
+                const row = `
+                    <tr class="border-b hover:bg-gray-50">
+                        <td class="px-6 py-4">${r.date}</td>
+                        <td class="px-6 py-4">${r.location}</td>
+                        <td class="px-6 py-4">${r.type}</td>
+                        <td class="px-6 py-4">${productSummary}</td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', row);
+            });
+        }
+        
+        function runReportFilter() {
+            const reportLoader = document.getElementById('reportLoader');
+            const reportResult = document.getElementById('reportResult');
+            reportLoader.classList.remove('hidden');
+            reportResult.classList.add('hidden');
+            
+            setTimeout(() => {
+                const startDate = document.getElementById('reportStartDate').value;
+                const endDate = document.getElementById('reportEndDate').value;
+                const user = document.getElementById('reportUser').value;
+                const location = document.getElementById('reportLocation').value;
+
+                let filteredData = requests.filter(r => {
+                    if (!r.date) return false;
+                    
+                    if (startDate && r.date < startDate) return false;
+                    if (endDate && r.date > endDate) return false;
+                    if (user && r.user !== user) return false;
+                    if (location && r.location !== location) return false;
+                    return true;
+                });
+                
+                populateReportTable(filteredData);
+                reportLoader.classList.add('hidden');
+                reportResult.classList.remove('hidden');
+            }, 300);
+        }
+        
+        function populateReportTable(data) {
+            const tbody = document.getElementById('reportTableBody');
+            tbody.innerHTML = '';
+            
+            if(data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-gray-500">No se encontraron resultados para los filtros aplicados.</td></tr>';
+                return;
+            }
+            
+            data.forEach(r => {
+                const productSummary = Object.entries(r.products || {})
+                    .map(([name, qty]) => `<span class="block">${name}: <strong>${qty}</strong></span>`)
+                    .join('');
+                    
+                const rowHTML = `
+                    <tr class="bg-white border-b hover:bg-gray-50">
+                        <td class="px-6 py-4 font-medium text-gray-900 whitespace-nowrap">${r.id || 'N/A'}</td>
+                        <td class="px-6 py-4">${r.date}</td>
+                        <td class="px-6 py-4">${r.user}</td>
+                        <td class="px-6 py-4">${r.location}</td>
+                        <td class="px-6 py-4">${r.type}</td>
+                        <td class="px-6 py-4">${r.comments || 'N/A'}</td>
+                        <td class="px-6 py-4">${productSummary || 'Ninguno'}</td>
+                    </tr>
+                `;
+                tbody.insertAdjacentHTML('beforeend', rowHTML);
+            });
+        }
+
+        // Event Listeners
+        document.addEventListener('DOMContentLoaded', function() {
+            const userRoleSelect = document.getElementById('userRole');
+            const tabs = document.querySelectorAll('[data-tab]');
+            const requestForm = document.getElementById('requestForm');
+            const reportFilters = document.querySelectorAll('.filter-input');
+            const userIdDisplay = document.getElementById('userIdDisplay');
+            const configButton = document.getElementById('configButton');
+            const configModal = document.getElementById('configModal');
+            const saveConfigButton = document.getElementById('saveConfigButton');
+            const scriptUrlInput = document.getElementById('scriptUrlInput');
+            const testConnectionButton = document.getElementById('testConnectionButton');
+            const signOutButton = document.getElementById('signOutButton');
+
+            // Cargar configuración
+            const hasConfig = loadConfig();
+            userIdDisplay.textContent = `ID de Sesión: ${userId}`;
+            document.getElementById('requestDate').value = new Date().toISOString().split('T')[0];
+
+            // Inicialmente ocultar el selector de rol hasta que el usuario inicie sesión
+            document.getElementById('userRole').classList.add('hidden');
+
+            userRoleSelect.addEventListener('change', (e) => switchView(e.target.value));
+            
+            tabs.forEach(tab => tab.addEventListener('click', (e) => {
+                e.preventDefault();
+                switchTab(e.target.dataset.tab);
+            }));
+            
+            requestForm.addEventListener('submit', handleFormSubmit);
+            
+            reportFilters.forEach(filter => filter.addEventListener('change', runReportFilter));
+            
+            document.getElementById('resetFilters').addEventListener('click', () => {
+                reportFilters.forEach(f => f.value = '');
+                runReportFilter();
+            });
+
+            // Configuración modal
+            configButton.addEventListener('click', () => {
+                configModal.classList.remove('hidden');
+            });
+
+            document.getElementById('closeConfigModal').addEventListener('click', () => {
+                configModal.classList.add('hidden');
+            });
+
+            saveConfigButton.addEventListener('click', () => {
+                const newUrl = scriptUrlInput.value.trim();
+                saveConfig(newUrl);
+            });
+
+            testConnectionButton.addEventListener('click', async () => {
+                const newUrl = scriptUrlInput.value.trim();
+                if (newUrl) {
+                    saveConfig(newUrl);
+                    await testGoogleSheetsConnection();
+                } else {
+                    showNotification('Por favor, ingresa una URL primero', 'error');
+                }
+            });
+
+            // Botón de cerrar sesión
+            signOutButton.addEventListener('click', handleSignOut);
+
+            // Iniciar aplicación
+            if (hasConfig) {
+                // No cambiar vista automáticamente, esperar a que el usuario inicie sesión
+                document.getElementById('loadingScreen').classList.add('hidden');
+            } else {
+                document.getElementById('loadingScreen').classList.add('hidden');
+                configModal.classList.remove('hidden');
+                showNotification('Por favor, configura la URL de tu Google Apps Script', 'info');
+            }
+        });
+
+        // Recargar datos cada 60 segundos
+        setInterval(() => {
+            if (GOOGLE_APPS_SCRIPT_URL && currentUser.isAuthenticated) {
+                loadData();
+            }
+        }, 60000);
+    </script>
+
+    <style>
+        body { font-family: 'Inter', sans-serif; background-color: #f8fafc; }
+        .chart-container { position: relative; width: 100%; max-width: 600px; margin-left: auto; margin-right: auto; height: 300px; max-height: 400px; }
+        @media (min-width: 768px) { .chart-container { height: 350px; } }
+        .tab-active { border-color: #3b82f6; color: #3b82f6; }
+        .tab-inactive { border-color: transparent; color: #6b7280; }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3b82f6;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        #notification {
+            transition: all 0.3s ease;
+            visibility: hidden;
+            opacity: 0;
+        }
+        #notification.visible {
+            visibility: visible;
+            opacity: 1;
+        }
+        .config-badge {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #4b5563;
+            color: white;
+            padding: 8px 12px;
+            border-radius: 6px;
+            font-size: 12px;
+            z-index: 40;
+            max-width: 300px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .g_id_signin iframe {
+            margin: 0 !important;
+        }
+    </style>
+</head>
+<body class="text-gray-800">
+    <div id="loadingScreen" class="fixed inset-0 bg-gray-100 bg-opacity-90 flex flex-col justify-center items-center z-50">
+        <div class="loader mb-4"></div>
+        <p class="text-lg text-gray-700">Conectando a Google Sheets...</p>
+        <p class="text-sm text-gray-500 mt-2">Asegúrate de haber configurado correctamente el Google Apps Script</p>
+    </div>
+
+    <div id="app" class="max-w-7xl mx-auto p-4 md:p-6 lg:p-8">
+        <header class="flex flex-col md:flex-row justify-between items-center mb-6 pb-4 border-b border-gray-200">
+            <div class="flex flex-col items-center md:items-start">
+                <h1 class="text-3xl font-bold text-gray-900">Gestión de Inventario</h1>
+                <p class="text-sm text-gray-600 mt-1">Conectado a Google Sheets</p>
+                <p id="userIdDisplay" class="text-xs text-gray-500 mt-1"></p>
+                <p id="userInfo" class="text-xs text-gray-500 mt-1 hidden"></p>
+            </div>
+            <div class="flex items-center space-x-4 mt-4 md:mt-0">
+                <div id="googleSignInButton" class="g_id_signin"
+                    data-type="standard"
+                    data-shape="rectangular"
+                    data-theme="outline"
+                    data-text="signin_with"
+                    data-size="medium"
+                    data-logo_alignment="left">
+                </div>
+                
+                <div id="userRole" class="hidden flex items-center space-x-2">
+                    <label for="userRoleSelect" class="text-sm font-medium">Vista:</label>
+                    <select id="userRoleSelect" class="w-32 bg-white border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5">
+                        <option value="solicitante">Solicitante</option>
+                        <option value="administrador">Administrador</option>
+                    </select>
+                    <button id="signOutButton" class="text-red-600 hover:text-red-800 text-sm font-medium">
+                        Cerrar Sesión
+                    </button>
+                </div>
+                
+                <button id="configButton" class="text-gray-500 hover:text-gray-700" title="Configuración">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" />
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                </button>
+            </div>
+        </header>
+
+        <div class="config-badge hidden md:block">
+            URL: <span id="currentUrl">No configurada</span>
+        </div>
+
+        <nav id="adminNav" class="mb-6 hidden">
+            <div class="border-b border-gray-200">
+                <ul class="flex -mb-px">
+                    <li class="mr-2">
+                        <a href="#" data-tab="dashboard" class="inline-block p-4 border-b-2 font-medium text-sm rounded-t-lg tab-active">Dashboard</a>
+                    </li>
+                    <li class="mr-2">
+                        <a href="#" data-tab="solicitud" class="inline-block p-4 border-b-2 font-medium text-sm rounded-t-lg tab-inactive">Nueva Solicitud</a>
+                    </li>
+                    <li>
+                        <a href="#" data-tab="reportes" class="inline-block p-4 border-b-2 font-medium text-sm rounded-t-lg tab-inactive">Reportes</a>
+                    </li>
+                </ul>
+            </div>
+        </nav>
+
+        <main class="mt-6">
+            <div id="loginPrompt" class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 text-center" style="display: none;">
+                <h2 class="text-2xl font-semibold mb-4 text-gray-700">Inicia Sesión</h2>
+                <p class="mb-6 text-gray-500">Por favor, inicia sesión con tu cuenta de Google para acceder al sistema de gestión de inventario.</p>
+                <div class="g_id_signin mx-auto"
+                    data-type="standard"
+                    data-shape="rectangular"
+                    data-theme="filled_blue"
+                    data-text="signin_with"
+                    data-size="large"
+                    data-width="300"
+                    data-logo_alignment="left">
+                </div>
+            </div>
+
+            <div id="dashboard" class="tab-content hidden">
+                <section>
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Resumen General</h2>
+                    <p class="mb-6 text-gray-500">Esta sección ofrece una vista rápida de las métricas más importantes. Utilice estos datos para identificar tendencias clave en las solicitudes de productos, la actividad por ubicación y el rendimiento general del inventario.</p>
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
+                        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h3 class="text-gray-500 text-sm font-medium">Solicitudes (30 días)</h3>
+                            <p id="kpi-total-requests" class="text-3xl font-bold mt-2">0</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h3 class="text-gray-500 text-sm font-medium">Producto Más Solicitado</h3>
+                            <p id="kpi-top-product" class="text-3xl font-bold mt-2">-</p>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h3 class="text-gray-500 text-sm font-medium">Ubicación Más Activa</h3>
+                            <p id="kpi-top-location" class="text-3xl font-bold mt-2">-</p>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h3 class="text-lg font-semibold mb-4">Solicitudes por Ubicación</h3>
+                            <div class="chart-container"><canvas id="locationChart"></canvas></div>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                            <h3 class="text-lg font-semibold mb-4">Top 5 Productos (Cantidad)</h3>
+                            <div class="chart-container"><canvas id='productChart'></canvas></div>
+                        </div>
+                        <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 lg:col-span-2">
+                            <h3 class="text-lg font-semibold mb-4">Actividad de Solicitudes (Últimos 30 días)</h3>
+                            <div class="chart-container h-64 md:h-80 max-h-[450px]"><canvas id="activityChart"></canvas></div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="solicitud" class="tab-content">
+                 <section>
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Crear Nueva Solicitud</h2>
+                    <p class="mb-6 text-gray-500">Complete el siguiente formulario para solicitar productos de la bodega. Asegúrese de especificar el tipo de solicitud, la ubicación y las cantidades de cada producto. Utilice la sección de comentarios para indicar el negocio o supermercado de destino.</p>
+                    <form id="requestForm" class="bg-white p-8 rounded-lg shadow-sm border border-gray-200 grid grid-cols-1 md:grid-cols-2 gap-6">
+                        <div class="md:col-span-2 grid grid-cols-1 md:grid-cols-3 gap-6">
+                            <div>
+                                <label for="requestDate" class="block mb-2 text-sm font-medium text-gray-900">Fecha</label>
+                                <input type="date" id="requestDate" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" required>
+                            </div>
+                            <div>
+                                <label for="requestType" class="block mb-2 text-sm font-medium text-gray-900">Tipo de Solicitud</label>
+                                <select id="requestType" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" required>
+                                    <option>Cambios</option>
+                                    <option>Degustaciones</option>
+                                    <option>Muestras</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="location" class="block mb-2 text-sm font-medium text-gray-900">Ubicación</label>
+                                <select id="location" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" required>
+                                    <option>San Pedro Sula</option>
+                                    <option>La Ceiba</option>
+                                    <option>Tegucigalpa</option>
+                                    <option>Puerto Cortes</option>
+                                    <option>Copan</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <h3 class="text-lg font-semibold mb-4 mt-4">Productos</h3>
+                            <div id="productList" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-4">
+                                <div class="col-span-full text-center py-8 text-gray-500">
+                                    Inicia sesión para ver los productos disponibles
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="md:col-span-2">
+                            <label for="comments" class="block mb-2 text-sm font-medium text-gray-900">Comentarios (Negocio/Supermercado de destino)</label>
+                            <textarea id="comments" rows="4" class="block p-2.5 w-full text-sm text-gray-900 bg-gray-50 rounded-lg border border-gray-300 focus:ring-blue-500 focus:border-blue-500" placeholder="Escriba aquí..." required></textarea>
+                        </div>
+
+                        <div class="md:col-span-2 text-right">
+                             <button type="submit" class="text-white bg-blue-600 hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm w-full sm:w-auto px-8 py-3 text-center">Enviar Solicitud</button>
+                        </div>
+                    </form>
+                </section>
+                
+                <section id="recentRequestsSection" class="mt-10">
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Mis Solicitudes Recientes</h2>
+                    <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3">Fecha</th>
+                                        <th scope="col" class="px-6 py-3">Ubicación</th>
+                                        <th scope="col" class="px-6 py-3">Tipo</th>
+                                        <th scope="col" class="px-6 py-3">Productos</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="recentRequestsTableBody">
+                                    <tr><td colspan="4" class="text-center p-4">Inicia sesión para ver tus solicitudes</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="reportes" class="tab-content hidden">
+                <section>
+                    <h2 class="text-2xl font-semibold mb-4 text-gray-700">Generador de Reportes</h2>
+                    <p class="mb-6 text-gray-500">Utilice los filtros para explorar los datos de las solicitudes. Puede generar reportes por rango de fechas, usuario o ubicación para analizar en detalle la actividad del inventario. Los resultados se mostrarán en la tabla a continuación.</p>
+                    <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200 mb-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+                            <div>
+                                <label for="reportStartDate" class="block mb-2 text-sm font-medium">Fecha Inicio</label>
+                                <input type="date" id="reportStartDate" class="filter-input bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                            </div>
+                            <div>
+                                <label for="reportEndDate" class="block mb-2 text-sm font-medium">Fecha Fin</label>
+                                <input type="date" id="reportEndDate" class="filter-input bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                            </div>
+                            <div>
+                                <label for="reportUser" class="block mb-2 text-sm font-medium">Usuario</label>
+                                <select id="reportUser" class="filter-input bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                                    <option value="">Todos</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label for="reportLocation" class="block mb-2 text-sm font-medium">Ubicación</label>
+                                <select id="reportLocation" class="filter-input bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5">
+                                    <option value="">Todas</option>
+                                     <option>San Pedro Sula</option>
+                                     <option>La Ceiba</option>
+                                     <option>Tegucigalpa</option>
+                                     <option>Puerto Cortes</option>
+                                     <option>Copan</option>
+                                </select>
+                            </div>
+                             <div class="lg:col-start-4">
+                                <button id="resetFilters" class="w-full bg-gray-600 hover:bg-gray-700 text-white font-medium rounded-lg text-sm px-5 py-2.5">Limpiar Filtros</button>
+                            </div>
+                        </div>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+                        <div id="reportResult" class="overflow-x-auto">
+                           <table class="w-full text-sm text-left text-gray-500">
+                                <thead class="text-xs text-gray-700 uppercase bg-gray-50">
+                                    <tr>
+                                        <th scope="col" class="px-6 py-3">ID</th>
+                                        <th scope="col" class="px-6 py-3">Fecha</th>
+                                        <th scope="col" class="px-6 py-3">Usuario</th>
+                                        <th scope="col" class="px-6 py-3">Ubicación</th>
+                                        <th scope="col" class="px-6 py-3">Tipo</th>
+                                        <th scope="col" class="px-6 py-3">Comentarios</th>
+                                        <th scope="col" class="px-6 py-3">Productos</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reportTableBody">
+                                    <tr><td colspan="7" class="text-center p-8">Inicia sesión como administrador para ver los reportes</td></tr>
+                                </tbody>
+                           </table>
+                        </div>
+                         <div id="reportLoader" class="flex justify-center items-center p-10 hidden">
+                             <div class="loader"></div>
+                         </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+    
+    <div id="notification" class="fixed top-5 right-5 bg-green-500 text-white py-2 px-4 rounded-lg shadow-lg opacity-0 invisible transition-all duration-300 z-50">
+        Solicitud enviada con éxito!
+    </div>
+
+    <!-- Modal de Configuración -->
+    <div id="configModal" class="fixed inset-0 bg-gray-600 bg-opacity-50 flex items-center justify-center z-50 p-4 hidden">
+        <div class="bg-white rounded-lg shadow-xl p-6 w-full max-w-md">
+            <div class="flex justify-between items-center pb-3">
+                <h3 class="text-xl font-semibold text-gray-800">Configuración de Conexión</h3>
+                <button id="closeConfigModal" class="text-gray-500 hover:text-gray-700">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                </button>
+            </div>
+            <div class="py-4">
+                <label for="scriptUrlInput" class="block text-sm font-medium text-gray-700 mb-2">URL de Google Apps Script</label>
+                <input type="text" id="scriptUrlInput" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5" placeholder="https://script.google.com/macros/s/...">
+                <p class="text-xs text-gray-500 mt-2">
+                    1. Ve a <a href="https://script.google.com/" target="_blank" class="text-blue-600">script.google.com</a><br>
+                    2. Crea un nuevo proyecto y pega el código del script<br>
+                    3. Despliega la aplicación y copia la URL aquí
+                </p>
+            </div>
+            <div class="flex justify-between pt-4">
+                <button id="testConnectionButton" class="px-4 py-2 bg-gray-600 text-white rounded hover:bg-gray-700">Probar Conexión</button>
+                <button id="saveConfigButton" class="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Google Sign-In Script -->
+    <script>
+        window.onload = function () {
+            google.accounts.id.initialize({
+                client_id: 'TU_CLIENT_ID_GOOGLE.apps.googleusercontent.com',
+                callback: handleGoogleSignIn
+            });
+            
+            google.accounts.id.renderButton(
+                document.getElementById("googleSignInButton"),
+                { theme: "outline", size: "medium" }
+            );
+            
+            google.accounts.id.prompt();
+        };
+    </script>
+</body>
+</html>
