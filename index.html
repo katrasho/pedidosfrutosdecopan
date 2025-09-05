@@ -32,6 +32,29 @@
         .table-responsive {
             overflow-x: auto;
         }
+        .sidebar-mobile-visible {
+            display: flex;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+            z-index: 40;
+            transform: translateX(0);
+            transition: transform 0.3s ease-in-out;
+        }
+        .sidebar-mobile-hidden {
+            transform: translateX(-100%);
+        }
+        .backdrop {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: rgba(0, 0, 0, 0.5);
+            z-index: 30;
+            display: none;
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -39,10 +62,16 @@
         <div class="loader"></div>
         <p id="loadingMessage" class="mt-4 text-gray-700">Conectando con Google Sheets...</p>
     </div>
-
+    
     <div id="app" class="min-h-screen flex flex-col md:flex-row hidden">
-        <aside id="sidebar" class="w-64 bg-white p-4 hidden md:flex flex-col shadow-lg">
-            <h1 class="text-xl font-bold text-gray-800 mb-6">Gestión de Inventario</h1>
+        <div id="backdrop" class="backdrop"></div>
+        <aside id="sidebar" class="w-64 bg-white p-4 flex-col shadow-lg fixed inset-y-0 left-0 z-40 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 ease-in-out">
+            <div class="flex justify-between items-center mb-6">
+                <h1 class="text-xl font-bold text-gray-800">Gestión de Inventario</h1>
+                <button id="closeSidebarBtn" class="md:hidden text-gray-500 hover:text-gray-700">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
             <nav class="space-y-2">
                 <a href="#" id="solicitudesTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-active">
                     <i class="fas fa-clipboard-list w-5"></i>
@@ -67,10 +96,15 @@
         </aside>
 
         <main id="main-content" class="flex-1 p-4 md:p-8 overflow-y-auto">
-            <header class="flex justify-end items-center mb-6">
-                <span id="userNameDisplay" class="mr-4 text-sm font-medium text-gray-600 hidden"></span>
-                <button id="loginButton" class="bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">Ingresar</button>
-                <button id="signOutButton" class="bg-red-500 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-red-600 transition-colors hidden">Salir</button>
+            <header class="flex justify-between items-center mb-6">
+                <button id="menuBtn" class="md:hidden text-gray-600 hover:text-gray-800 focus:outline-none">
+                    <i class="fas fa-bars text-xl"></i>
+                </button>
+                <div class="flex items-center ml-auto">
+                    <span id="userNameDisplay" class="mr-4 text-sm font-medium text-gray-600 hidden"></span>
+                    <button id="loginButton" class="bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">Ingresar</button>
+                    <button id="signOutButton" class="bg-red-500 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-red-600 transition-colors hidden">Salir</button>
+                </div>
             </header>
 
             <section id="solicitudesView" class="view-content active">
@@ -178,43 +212,56 @@
     </div>
 
     <div id="solicitudModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
-        <div class="relative bg-white rounded-lg shadow-xl p-8 max-w-2xl w-full mx-4">
+        <div class="relative bg-white rounded-lg shadow-xl p-8 max-w-4xl w-full mx-4 my-8">
             <button class="absolute top-4 right-4 text-gray-400 hover:text-gray-600" id="closeModalBtn">&times;</button>
-            <h3 class="text-xl font-semibold text-gray-800 mb-4">Nueva Solicitud</h3>
-            <form id="solicitudForm" class="space-y-4">
-                <div>
-                    <label for="solicitudUser" class="block text-sm font-medium text-gray-700">Nombre de Usuario</label>
-                    <input type="text" id="solicitudUser" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
-                </div>
-                <div>
-                    <label for="solicitudEmail" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
-                    <input type="email" id="solicitudEmail" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
-                </div>
-                <div>
-                    <label for="solicitudDate" class="block text-sm font-medium text-gray-700">Fecha</label>
-                    <input type="date" id="solicitudDate" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
-                </div>
-                <div>
-                    <label for="solicitudType" class="block text-sm font-medium text-gray-700">Tipo de Solicitud</label>
-                    <select id="solicitudType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
-                        <option value="Degustación">Degustación</option>
-                        <option value="Promoción">Promoción</option>
-                        <option value="Evento">Evento</option>
-                    </select>
-                </div>
-                <div>
-                    <label for="solicitudLocation" class="block text-sm font-medium text-gray-700">Ubicación</label>
-                    <input type="text" id="solicitudLocation" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
-                </div>
-                <div>
-                    <label class="block text-sm font-medium text-gray-700">Productos</label>
-                    <div id="productosContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-2">
+            <h3 class="text-xl font-semibold text-gray-800 mb-4">Crear Nueva Solicitud</h3>
+            <p class="text-sm text-gray-600 mb-6">Complete el siguiente formulario para solicitar productos de la bodega. Asegúrese de especificar el tipo de solicitud, la ubicación y las cantidades de cada producto.</p>
+            <form id="solicitudForm" class="space-y-6">
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label for="solicitudDate" class="block text-sm font-medium text-gray-700">Fecha</label>
+                        <input type="date" id="solicitudDate" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
+                    </div>
+                    <div>
+                        <label for="solicitudType" class="block text-sm font-medium text-gray-700">Tipo de Solicitud</label>
+                        <select id="solicitudType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                            <option value="Cambios">Cambios</option>
+                            <option value="Degustaciones">Degustaciones</option>
+                            <option value="Muestras">Muestras</option>
+                            <option value="Pedido">Pedido</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label for="solicitudLocation" class="block text-sm font-medium text-gray-700">Ubicación</label>
+                        <select id="solicitudLocation" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
+                            <option value="San Pedro Sula">San Pedro Sula</option>
+                            <option value="Puerto Cortes">Puerto Cortes</option>
+                            <option value="La Ceiba">La Ceiba</option>
+                            <option value="Tegucigalpa">Tegucigalpa</option>
+                            <option value="Copan">Copan</option>
+                        </select>
                     </div>
                 </div>
+
                 <div>
-                    <label for="solicitudComments" class="block text-sm font-medium text-gray-700">Comentarios (Opcional)</label>
-                    <textarea id="solicitudComments" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2"></textarea>
+                    <h4 class="block text-sm font-medium text-gray-700 mb-2">Productos</h4>
+                    <div id="productosContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    </div>
                 </div>
+                
+                <div>
+                    <label for="solicitudComments" class="block text-sm font-medium text-gray-700">Nombre del Destino (Supermercado, Negocio o Cliente)</label>
+                    <textarea id="solicitudComments" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required></textarea>
+                </div>
+                <div class="hidden">
+                    <label for="solicitudUser" class="block text-sm font-medium text-gray-700">Nombre de Usuario</label>
+                    <input type="text" id="solicitudUser" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                </div>
+                <div class="hidden">
+                    <label for="solicitudEmail" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
+                    <input type="email" id="solicitudEmail" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                </div>
+                
                 <div class="flex justify-end space-x-4 mt-6">
                     <button type="button" id="cancelFormBtn" class="bg-gray-200 text-gray-800 py-2 px-4 rounded-md font-medium hover:bg-gray-300 transition-colors">Cancelar</button>
                     <button type="submit" id="submitFormBtn" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">Enviar Solicitud</button>
@@ -222,7 +269,7 @@
             </form>
         </div>
     </div>
-
+    
     <div id="loginModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
         <div class="relative bg-white rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
             <button class="absolute top-4 right-4 text-gray-400 hover:text-gray-600" id="closeLoginModalBtn">&times;</button>
@@ -243,11 +290,11 @@
             <p id="loginMessage" class="mt-4 text-center text-red-500 text-sm"></p>
         </div>
     </div>
-
+    
     <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
 
     <script>
-        const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw3MrfinkqGnwjzEli0oIjYg64J2NI0XWjZFbabEVtiZYrej4p7dIFhA4WHgbopWTQgyA/exec';
+        const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6SLFNCElTUdrhIkCaQAH7k6_3mdyCGyPGtRqQzowVteORhZoGgKXUzy5W1FxSBQw/exec';
 
         let allSolicitudes = [];
         let allProductos = [];
@@ -293,7 +340,11 @@
             solicitudLocation: document.getElementById('solicitudLocation'),
             solicitudComments: document.getElementById('solicitudComments'),
             reportTableBody: document.getElementById('reportTableBody'),
-            reportFilter: document.getElementById('reportFilter')
+            reportFilter: document.getElementById('reportFilter'),
+            sidebar: document.getElementById('sidebar'),
+            menuBtn: document.getElementById('menuBtn'),
+            closeSidebarBtn: document.getElementById('closeSidebarBtn'),
+            backdrop: document.getElementById('backdrop')
         };
 
         function showNotification(message, type = 'info') {
@@ -315,6 +366,23 @@
             const targetTab = document.getElementById(`${viewId.replace('View', 'Tab')}`);
             if (targetTab) {
                 targetTab.classList.replace('tab-inactive', 'tab-active');
+            }
+            if (window.innerWidth < 768) {
+                toggleSidebar();
+            }
+        }
+
+        function toggleSidebar() {
+            const sidebar = elements.sidebar;
+            const backdrop = elements.backdrop;
+            if (sidebar.classList.contains('-translate-x-full')) {
+                sidebar.classList.remove('-translate-x-full');
+                sidebar.classList.add('translate-x-0');
+                backdrop.style.display = 'block';
+            } else {
+                sidebar.classList.remove('translate-x-0');
+                sidebar.classList.add('-translate-x-full');
+                backdrop.style.display = 'none';
             }
         }
 
@@ -446,7 +514,7 @@
                     <p class="text-gray-600 mt-1"><strong class="font-medium">Correo:</strong> ${solicitud.Email}</p>
                     <p class="text-gray-600 mt-1"><strong class="font-medium">Ubicación:</strong> ${solicitud.Ubicacion}</p>
                     <p class="text-gray-600 mt-1"><strong class="font-medium">Productos:</strong> ${productosText || 'No especificado'}</p>
-                    <p class="text-sm text-gray-500 mt-2"><strong class="font-medium">Comentarios:</strong> ${solicitud.Comentarios || 'N/A'}</p>
+                    <p class="text-sm text-gray-500 mt-2"><strong class="font-medium">Destino:</strong> ${solicitud.Comentarios || 'N/A'}</p>
                 `;
                 list.appendChild(item);
             });
@@ -457,10 +525,11 @@
             container.innerHTML = '';
             allProductos.filter(p => p.Activo).forEach(producto => {
                 const div = document.createElement('div');
-                div.className = 'flex items-center space-x-2';
+                div.className = 'bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200';
                 div.innerHTML = `
-                    <input type="checkbox" id="producto-${producto.Nombre}" name="productos" value="${producto.Nombre}" class="rounded text-blue-600 focus:ring-blue-500">
-                    <label for="producto-${producto.Nombre}" class="text-sm text-gray-700">${producto.Nombre}</label>
+                    <h5 class="text-sm font-semibold text-gray-700 mb-2">${producto.Nombre}</h5>
+                    <label for="cantidad-${producto.Nombre}" class="sr-only">Cantidad de ${producto.Nombre}</label>
+                    <input type="number" id="cantidad-${producto.Nombre}" name="cantidad-${producto.Nombre}" min="0" value="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-center" />
                 `;
                 container.appendChild(div);
             });
@@ -640,6 +709,10 @@
             showNotification('Sesión cerrada.', 'info');
         });
 
+        elements.menuBtn.addEventListener('click', toggleSidebar);
+        elements.closeSidebarBtn.addEventListener('click', toggleSidebar);
+        elements.backdrop.addEventListener('click', toggleSidebar);
+
         elements.solicitudesTab.addEventListener('click', (e) => { e.preventDefault(); switchView('solicitudesView'); renderSolicitudes(); });
         if (elements.dashboardTab) { elements.dashboardTab.addEventListener('click', (e) => { e.preventDefault(); switchView('dashboardView'); updateDashboard(); }); }
         if (elements.reportesTab) { elements.reportesTab.addEventListener('click', (e) => { e.preventDefault(); switchView('reportesView'); renderReportTable(); }); }
@@ -661,9 +734,19 @@
         elements.solicitudForm.addEventListener('submit', async (e) => {
             e.preventDefault();
             const selectedProducts = {};
-            document.querySelectorAll('#productosContainer input[type="checkbox"]:checked').forEach(checkbox => {
-                selectedProducts[checkbox.value] = 1;
+            document.querySelectorAll('#productosContainer input[type="number"]').forEach(input => {
+                const productName = input.id.replace('cantidad-', '');
+                const quantity = parseInt(input.value);
+                if (quantity > 0) {
+                    selectedProducts[productName] = quantity;
+                }
             });
+
+            if (Object.keys(selectedProducts).length === 0) {
+                showNotification('Por favor, ingresa una cantidad para al menos un producto.', 'error');
+                return;
+            }
+
             const solicitudData = {
                 date: elements.solicitudDate.value,
                 type: elements.solicitudType.value,
