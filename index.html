@@ -17,776 +17,1012 @@
         .tab-inactive:hover { background-color: #f3f4f6; }
         .view-content { display: none; }
         .view-content.active { display: block; }
-        .loader {
-            border: 4px solid #f3f3f3;
-            border-top: 4px solid #3b82f6;
-            border-radius: 50%;
-            width: 40px;
-            height: 40px;
-            animation: spin 1s linear infinite;
+        .admin-only { display: none; }
+
+        /* Ajustes para el modal de solicitud */
+        #solicitudModal .modal-content {
+            width: 100%;
+            max-width: 900px; /* Ancho máximo para el modal, similar a la imagen */
+            max-height: 90vh; /* Altura máxima para no desbordar la pantalla */
+            overflow-y: auto; /* Scroll si el contenido es muy largo */
         }
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+        #solicitudForm .grid-container {
+            display: grid;
+            grid-template-columns: repeat(1, 1fr);
+            gap: 1.5rem; /* 6 en Tailwind */
         }
-        .table-responsive {
+        @media (min-width: 768px) {
+            #solicitudForm .grid-container {
+                grid-template-columns: repeat(3, 1fr);
+            }
+        }
+        @media (min-width: 1024px) {
+            #solicitudForm .grid-container {
+                grid-template-columns: repeat(4, 1fr);
+            }
+        }
+
+        /* Ajustes para la tabla de reportes */
+        #reportesView .overflow-x-auto {
             overflow-x: auto;
         }
-        .sidebar-mobile-visible {
-            display: flex;
-            position: fixed;
-            top: 0;
-            left: 0;
-            bottom: 0;
-            z-index: 40;
-            transform: translateX(0);
-            transition: transform 0.3s ease-in-out;
-        }
-        .sidebar-mobile-hidden {
-            transform: translateX(-100%);
-        }
-        .backdrop {
-            position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: rgba(0, 0, 0, 0.5);
-            z-index: 30;
+
+        /* Estilos para las columnas ocultas en mobile */
+        .report-table-hidden {
             display: none;
+        }
+        @media (min-width: 768px) {
+            .report-table-hidden {
+                display: table-cell;
+            }
+        }
+
+        /* Estilos para la fila expandida */
+        .expanded-row td {
+            padding: 1rem;
+            background-color: #f3f4f6;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        .expanded-row .detail-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 0.5rem 0;
+            border-bottom: 1px dashed #d1d5db;
+        }
+
+        .expanded-row .detail-item:last-child {
+            border-bottom: none;
+        }
+
+        .expanded-row .detail-item span:first-child {
+            font-weight: 500;
+            color: #4b5563;
+        }
+
+        .expanded-row .detail-item span:last-child {
+            color: #6b7280;
+            text-align: right;
+            max-width: 60%;
         }
     </style>
 </head>
-<body class="bg-gray-100 min-h-screen">
-    <div id="loadingScreen" class="fixed inset-0 bg-gray-100 flex flex-col justify-center items-center z-50 hidden">
-        <div class="loader"></div>
-        <p id="loadingMessage" class="mt-4 text-gray-700">Conectando con Google Sheets...</p>
+<body class="bg-gray-100 flex h-screen overflow-hidden">
+    <div id="loadingScreen" class="fixed inset-0 bg-white flex items-center justify-center z-50">
+        <div class="flex flex-col items-center">
+            <div class="animate-spin rounded-full h-16 w-16 border-t-2 border-b-2 border-blue-500"></div>
+            <p class="mt-4 text-gray-600">Cargando...</p>
+        </div>
     </div>
-    
-    <div id="app" class="min-h-screen flex flex-col md:flex-row hidden">
-        <div id="backdrop" class="backdrop"></div>
-        <aside id="sidebar" class="w-64 bg-white p-4 flex-col shadow-lg fixed inset-y-0 left-0 z-40 transform -translate-x-full md:relative md:translate-x-0 transition-transform duration-300 ease-in-out">
-            <div class="flex justify-between items-center mb-6">
-                <h1 class="text-xl font-bold text-gray-800">Gestión de Inventario</h1>
-                <button id="closeSidebarBtn" class="md:hidden text-gray-500 hover:text-gray-700">
-                    <i class="fas fa-times"></i>
-                </button>
+
+    <aside id="sidebar" class="transform -translate-x-full md:translate-x-0 transition-transform duration-300 ease-in-out bg-white text-gray-700 w-64 p-6 flex flex-col justify-between fixed h-full z-40 md:relative md:h-auto md:flex-shrink-0 shadow-lg">
+        <button id="closeSidebarBtn" class="absolute top-4 right-4 text-gray-500 md:hidden">
+            <i class="fas fa-times text-xl"></i>
+        </button>
+        <div>
+            <div class="flex items-center space-x-2 mb-8">
+                <img src="https://placehold.co/40x40" alt="Logo" class="rounded-full">
+                <span class="text-xl font-bold">Frutos de Copan</span>
             </div>
             <nav class="space-y-2">
                 <a href="#" id="solicitudesTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-active">
-                    <i class="fas fa-clipboard-list w-5"></i>
+                    <i class="fas fa-list-alt w-5"></i>
                     <span>Solicitudes</span>
                 </a>
-                <a href="#" id="dashboardTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only hidden">
-                    <i class="fas fa-chart-bar w-5"></i>
+                <a href="#" id="dashboardTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only">
+                    <i class="fas fa-tachometer-alt w-5"></i>
                     <span>Dashboard</span>
                 </a>
-                <a href="#" id="reportesTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only hidden">
-                    <i class="fas fa-file-invoice w-5"></i>
+                <a href="#" id="reportesTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only">
+                    <i class="fas fa-file-alt w-5"></i>
                     <span>Reportes</span>
                 </a>
-                <a href="#" id="configTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only hidden">
+                <a href="#" id="configTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only">
                     <i class="fas fa-cog w-5"></i>
                     <span>Configuración</span>
                 </a>
+                <a href="#" id="disponibilidadTab" class="flex items-center space-x-2 p-3 rounded-md font-medium transition-colors tab-inactive admin-only">
+                    <i class="fas fa-calendar-alt w-5"></i>
+                    <span>Disponibilidad</span>
+                </a>
             </nav>
-            <div class="mt-auto pt-4 border-t border-gray-200 text-sm text-gray-500">
-                <p>Versión 1.0</p>
-            </div>
-        </aside>
+        </div>
+        <div class="mt-8">
+            <div id="userNameDisplay" class="text-xs text-gray-500 text-center hidden"></div>
+            <button id="loginButton" class="w-full bg-blue-600 text-white font-semibold py-2 rounded-md hover:bg-blue-700 transition-colors">Iniciar Sesión</button>
+            <button id="signOutButton" class="w-full bg-red-500 text-white font-semibold py-2 rounded-md hover:bg-red-600 transition-colors hidden mt-2">Cerrar Sesión</button>
+        </div>
+    </aside>
 
-        <main id="main-content" class="flex-1 p-4 md:p-8 overflow-y-auto">
-            <header class="flex justify-between items-center mb-6">
-                <button id="menuBtn" class="md:hidden text-gray-600 hover:text-gray-800 focus:outline-none">
-                    <i class="fas fa-bars text-xl"></i>
+    <div id="backdrop" class="fixed inset-0 bg-gray-900 bg-opacity-50 z-30 hidden md:hidden"></div>
+
+    <div id="app" class="flex-1 flex flex-col p-6 overflow-y-auto hidden">
+        <header class="flex items-center justify-between pb-4 border-b-2 border-gray-200">
+            <h1 class="text-3xl font-bold text-gray-800">Sistema de Degustaciones</h1>
+            <div class="md:hidden">
+                <button id="menuBtn" class="p-2 text-gray-600 focus:outline-none">
+                    <i class="fas fa-bars text-2xl"></i>
                 </button>
-                <div class="flex items-center ml-auto">
-                    <span id="userNameDisplay" class="mr-4 text-sm font-medium text-gray-600 hidden"></span>
-                    <button id="loginButton" class="bg-blue-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-blue-700 transition-colors">Ingresar</button>
-                    <button id="signOutButton" class="bg-red-500 text-white py-2 px-4 rounded-md text-sm font-medium hover:bg-red-600 transition-colors hidden">Salir</button>
-                </div>
-            </header>
+            </div>
+        </header>
 
-            <section id="solicitudesView" class="view-content active">
-                <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-semibold text-gray-700">Historial de Solicitudes</h2>
-                    <button id="addSolicitudBtn" class="bg-gradient-to-r from-blue-500 to-indigo-600 text-white py-2 px-4 rounded-md text-sm font-medium hover:from-blue-600 hover:to-indigo-700 transition-colors shadow-md flex items-center space-x-2">
-                        <i class="fas fa-plus-circle"></i>
-                        <span>Nueva Solicitud</span>
-                    </button>
-                </div>
-                <div id="solicitudesList" class="space-y-4">
-                    <p class="text-center text-gray-500">Cargando solicitudes...</p>
-                </div>
-            </section>
+        <section id="solicitudesView" class="view-content active mt-6">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-semibold text-gray-700">Solicitudes</h2>
+                <button id="addSolicitudBtn" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">
+                    <i class="fas fa-plus mr-2"></i>Nueva Solicitud
+                </button>
+            </div>
+            <div id="solicitudesList" class="space-y-4">
+            </div>
+        </section>
 
-            <section id="dashboardView" class="view-content">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Dashboard de Gestión</h2>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-blue-500 flex items-center space-x-4">
-                        <div class="p-3 bg-blue-100 rounded-full text-blue-600">
-                            <i class="fas fa-list-alt fa-lg"></i>
-                        </div>
-                        <div>
-                            <h3 class="text-md font-semibold text-gray-500">Total Solicitudes</h3>
-                            <p id="totalSolicitudes" class="text-3xl font-bold text-gray-800 mt-2">0</p>
-                        </div>
-                    </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-green-500 flex items-center space-x-4">
-                        <div class="p-3 bg-green-100 rounded-full text-green-600">
-                            <i class="fas fa-boxes fa-lg"></i>
-                        </div>
-                        <div>
-                            <h3 class="text-md font-semibold text-gray-500">Productos Activos</h3>
-                            <p id="totalProductosActivos" class="text-3xl font-bold text-gray-800 mt-2">0</p>
-                        </div>
-                    </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md border-l-4 border-yellow-500 flex items-center space-x-4">
-                        <div class="p-3 bg-yellow-100 rounded-full text-yellow-600">
-                            <i class="fas fa-hourglass-half fa-lg"></i>
-                        </div>
-                        <div>
-                            <h3 class="text-md font-semibold text-gray-500">Solicitudes en Proceso</h3>
-                            <p id="solicitudesEnProceso" class="text-3xl font-bold text-gray-800 mt-2">0</p>
-                        </div>
-                    </div>
-                </div>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-lg font-semibold text-gray-700 mb-4">Productos más solicitados</h3>
-                        <div class="chart-container"><canvas id="topProductsChart"></canvas></div>
-                    </div>
-                    <div class="bg-white p-6 rounded-lg shadow-md">
-                        <h3 class="text-lg font-semibold text-gray-700 mb-4">Solicitudes por Ubicación</h3>
-                        <div class="chart-container"><canvas id="locationChart"></canvas></div>
-                    </div>
-                </div>
-            </section>
-
-            <section id="reportesView" class="view-content">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Reporte de Solicitudes</h2>
-                <div class="flex items-center mb-4 space-x-4 admin-only hidden">
-                    <label for="reportFilter" class="text-sm font-medium text-gray-700">Mostrar:</label>
-                    <select id="reportFilter" class="p-2 border rounded-md">
-                        <option value="all">Todas</option>
-                        <option value="active">Solo Activas</option>
-                    </select>
-                </div>
-                <div class="overflow-x-auto bg-white rounded-lg shadow-md table-responsive">
-                    <table class="min-w-full divide-y divide-gray-200">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ubicación</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tipo</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Comentarios</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Productos</th>
-                                <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Activa</th>
-                                <th scope="col" class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Acciones</th>
-                            </tr>
-                        </thead>
-                        <tbody id="reportTableBody" class="bg-white divide-y divide-gray-200">
-                            <tr><td colspan="9" class="text-center p-8 text-gray-500">Cargando datos...</td></tr>
-                        </tbody>
-                    </table>
-                </div>
-            </section>
-
-            <section id="configView" class="view-content">
-                <h2 class="text-2xl font-semibold text-gray-700 mb-4">Configuración del Sistema</h2>
-                <div class="bg-white p-6 rounded-lg shadow-md space-y-4">
+        <section id="dashboardView" class="view-content mt-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Dashboard</h2>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+                <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
                     <div>
-                        <label for="scriptUrlInput" class="block text-sm font-medium text-gray-700">URL del Google Apps Script</label>
-                        <input type="text" id="scriptUrlInput" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" placeholder="Pega la URL aquí">
+                        <p class="text-sm font-medium text-gray-500">Solicitudes Totales</p>
+                        <p id="totalSolicitudes" class="mt-1 text-3xl font-semibold text-gray-900">0</p>
                     </div>
-                    <div class="flex space-x-4">
-                        <button id="saveConfigButton" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">Guardar URL</button>
-                        <button id="testConnectionButton" class="bg-gray-200 text-gray-800 py-2 px-4 rounded-md font-medium hover:bg-gray-300 transition-colors">Probar Conexión</button>
-                    </div>
-                    <p id="connectionStatus" class="text-sm font-medium"></p>
+                    <i class="fas fa-list-alt text-4xl text-blue-400"></i>
                 </div>
-            </section>
-        </main>
+                <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Productos Activos</p>
+                        <p id="totalProductosActivos" class="mt-1 text-3xl font-semibold text-gray-900">0</p>
+                    </div>
+                    <i class="fas fa-box-open text-4xl text-green-400"></i>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md flex items-center justify-between">
+                    <div>
+                        <p class="text-sm font-medium text-gray-500">Solicitudes en Proceso</p>
+                        <p id="solicitudesEnProceso" class="mt-1 text-3xl font-semibold text-gray-900">0</p>
+                    </div>
+                    <i class="fas fa-tasks text-4xl text-yellow-400"></i>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Productos más Solicitados</h3>
+                    <div class="chart-container">
+                        <canvas id="topProductsChart"></canvas>
+                    </div>
+                </div>
+                <div class="bg-white p-6 rounded-lg shadow-md">
+                    <h3 class="text-lg font-semibold text-gray-700 mb-4">Solicitudes por Ubicación</h3>
+                    <div class="chart-container">
+                        <canvas id="locationChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="reportesView" class="view-content mt-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Reporte de Solicitudes</h2>
+            <div class="mb-4 flex items-center space-x-4">
+                <label for="reportFilter" class="text-sm font-medium text-gray-700">Filtrar por:</label>
+                <select id="reportFilter" class="p-2 border rounded-md">
+                    <option value="all">Todas las Solicitudes</option>
+                    <option value="active">Solo Activas</option>
+                </select>
+            </div>
+            <div class="bg-white p-6 rounded-lg shadow-md overflow-x-auto">
+                <table class="w-full table-fixed divide-y divide-gray-200">
+                    <thead class="bg-gray-50">
+                        <tr>
+                            <th scope="col" class="w-[5%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"></th>
+                            <th scope="col" class="w-[5%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">ID</th>
+                            <th scope="col" class="w-[10%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Fecha</th>
+                            <th scope="col" class="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Usuario</th>
+                            <th scope="col" class="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Ubicación</th>
+                            <th scope="col" class="w-[10%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider report-table-hidden">Tipo</th>
+                            <th scope="col" class="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider report-table-hidden">Comentarios</th>
+                            <th scope="col" class="w-[20%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider report-table-hidden">Productos</th>
+                            <th scope="col" class="w-[5%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider report-table-hidden">Activa</th>
+                            <th scope="col" class="w-[15%] px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider report-table-hidden">Responsable</th>
+                            <th scope="col" class="w-[15%] px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider report-table-hidden">Acciones</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reportTableBody" class="bg-white divide-y divide-gray-200">
+                        </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section id="configView" class="view-content mt-6">
+            <h2 class="text-2xl font-semibold text-gray-700">Configuración</h2>
+            <p class="mt-4 text-gray-600">Página de configuración para el administrador.</p>
+        </section>
+
+        <section id="disponibilidadView" class="view-content">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Gestión de Disponibilidad</h2>
+            <div class="bg-white p-6 rounded-lg shadow-md space-y-4">
+                <div class="flex items-center space-x-4">
+                    <label for="disponibilidadUserSelect" class="text-sm font-medium text-gray-700">Seleccionar Usuario:</label>
+                    <select id="disponibilidadUserSelect" class="p-2 border rounded-md"></select>
+                </div>
+                <div class="flex flex-col items-center">
+                    <h3 id="currentMonthYear" class="text-lg font-semibold text-gray-700 mb-2"></h3>
+                    <div class="flex space-x-4 mb-4">
+                        <button id="prevMonthBtn" class="p-2 rounded-md bg-gray-200 hover:bg-gray-300 transition-colors"><i class="fas fa-chevron-left"></i></button>
+                        <button id="nextMonthBtn" class="p-2 rounded-md bg-gray-200 hover:bg-gray-300 transition-colors"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div id="calendar" class="w-full max-w-sm grid grid-cols-7 gap-1"></div>
+                    <div class="mt-6 flex space-x-4">
+                        <button id="saveDisponibilidadBtn" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">Guardar Cambios</button>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
 
-    <div id="solicitudModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
-        <div class="relative bg-white rounded-lg shadow-xl p-8 max-w-4xl w-full mx-4 my-8">
-            <button class="absolute top-4 right-4 text-gray-400 hover:text-gray-600" id="closeModalBtn">&times;</button>
+    <div id="solicitudModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-lg modal-content relative">
+            <button id="closeModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800">
+                <i class="fas fa-times text-xl"></i>
+            </button>
             <h3 class="text-xl font-semibold text-gray-800 mb-4">Crear Nueva Solicitud</h3>
             <p class="text-sm text-gray-600 mb-6">Complete el siguiente formulario para solicitar productos de la bodega. Asegúrese de especificar el tipo de solicitud, la ubicación y las cantidades de cada producto.</p>
             <form id="solicitudForm" class="space-y-6">
                 <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
                         <label for="solicitudDate" class="block text-sm font-medium text-gray-700">Fecha</label>
-                        <input type="date" id="solicitudDate" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
+                        <input type="date" id="solicitudDate" name="date" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
                     </div>
                     <div>
                         <label for="solicitudType" class="block text-sm font-medium text-gray-700">Tipo de Solicitud</label>
-                        <select id="solicitudType" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2">
+                        <select id="solicitudType" name="type" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            <option value="Degustación">Degustación</option>
                             <option value="Cambios">Cambios</option>
-                            <option value="Degustaciones">Degustaciones</option>
+                            <option value="Promoción">Promoción</option>
                             <option value="Muestras">Muestras</option>
-                            <option value="Pedido">Pedido</option>
+                            <option value="Donación">Donación</option>
                         </select>
                     </div>
                     <div>
                         <label for="solicitudLocation" class="block text-sm font-medium text-gray-700">Ubicación</label>
-                        <select id="solicitudLocation" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
+                        <select id="solicitudLocation" name="location" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
+                            <option value="">Selecciona una ciudad...</option>
                             <option value="San Pedro Sula">San Pedro Sula</option>
-                            <option value="Puerto Cortes">Puerto Cortes</option>
-                            <option value="La Ceiba">La Ceiba</option>
                             <option value="Tegucigalpa">Tegucigalpa</option>
-                            <option value="Copan">Copan</option>
+                            <option value="Puerto Cortes">Puerto Cortes</option>
                         </select>
                     </div>
                 </div>
-
                 <div>
-                    <h4 class="block text-sm font-medium text-gray-700 mb-2">Productos</h4>
-                    <div id="productosContainer" class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <h4 class="text-lg font-semibold text-gray-700 mb-4">Productos</h4>
+                    <div id="productosContainer" class="grid-container">
                     </div>
                 </div>
-                
                 <div>
                     <label for="solicitudComments" class="block text-sm font-medium text-gray-700">Nombre del Destino (Supermercado, Negocio o Cliente)</label>
-                    <textarea id="solicitudComments" rows="3" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required></textarea>
+                    <textarea id="solicitudComments" name="comments" rows="2" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2"></textarea>
                 </div>
                 <div class="hidden">
-                    <label for="solicitudUser" class="block text-sm font-medium text-gray-700">Nombre de Usuario</label>
-                    <input type="text" id="solicitudUser" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
+                    <input type="text" id="solicitudUser" name="user" readonly>
+                    <input type="email" id="solicitudEmail" name="email" readonly>
                 </div>
-                <div class="hidden">
-                    <label for="solicitudEmail" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
-                    <input type="email" id="solicitudEmail" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2">
-                </div>
-                
-                <div class="flex justify-end space-x-4 mt-6">
-                    <button type="button" id="cancelFormBtn" class="bg-gray-200 text-gray-800 py-2 px-4 rounded-md font-medium hover:bg-gray-300 transition-colors">Cancelar</button>
-                    <button type="submit" id="submitFormBtn" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">Enviar Solicitud</button>
+                <div class="flex justify-end space-x-2 mt-6">
+                    <button type="button" id="cancelFormBtn" class="bg-gray-300 text-gray-800 py-2 px-4 rounded-md font-medium hover:bg-gray-400 transition-colors">Cancelar</button>
+                    <button type="submit" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">Enviar Solicitud</button>
                 </div>
             </form>
         </div>
     </div>
-    
-    <div id="loginModal" class="hidden fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full flex items-center justify-center z-50">
-        <div class="relative bg-white rounded-lg shadow-xl p-8 max-w-md w-full mx-4">
-            <button class="absolute top-4 right-4 text-gray-400 hover:text-gray-600" id="closeLoginModalBtn">&times;</button>
+
+    <div id="loginModal" class="fixed inset-0 bg-gray-900 bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-white p-8 rounded-lg shadow-lg w-full max-w-sm relative">
+            <button id="closeLoginModalBtn" class="absolute top-4 right-4 text-gray-500 hover:text-gray-800">
+                <i class="fas fa-times text-xl"></i>
+            </button>
             <h3 class="text-xl font-semibold text-gray-800 mb-4">Iniciar Sesión</h3>
             <form id="loginForm" class="space-y-4">
                 <div>
                     <label for="emailInput" class="block text-sm font-medium text-gray-700">Correo Electrónico</label>
-                    <input type="email" id="emailInput" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
+                    <input type="email" id="emailInput" name="email" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
                 </div>
                 <div>
                     <label for="passwordInput" class="block text-sm font-medium text-gray-700">Contraseña</label>
-                    <input type="password" id="passwordInput" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2" required>
+                    <input type="password" id="passwordInput" name="password" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2" required>
                 </div>
-                <button type="submit" id="loginBtnModal" class="w-full bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">
-                    Ingresar
-                </button>
+                <div id="loginMessage" class="text-red-500 text-sm"></div>
+                <div class="flex justify-end">
+                    <button type="submit" id="loginBtnModal" class="bg-blue-600 text-white py-2 px-4 rounded-md font-medium hover:bg-blue-700 transition-colors">Ingresar</button>
+                </div>
             </form>
-            <p id="loginMessage" class="mt-4 text-center text-red-500 text-sm"></p>
         </div>
     </div>
-    
-    <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
+
+    <div id="notificationContainer" class="fixed bottom-4 right-4 z-50 flex flex-col items-end space-y-2"></div>
 
     <script>
-        const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw6SLFNCElTUdrhIkCaQAH7k6_3mdyCGyPGtRqQzowVteORhZoGgKXUzy5W1FxSBQw/exec';
+    const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwVS7uCY84hkzyYo-OEb_IYzeP7SuQGQvPaOFh0iqCv2YWo9DxQCj5NBr5EIhnY5Bbmqw/exec';
 
-        let allSolicitudes = [];
-        let allProductos = [];
-        let currentUser = { email: null, name: null, nivel: null, isAuthenticated: false };
-        let charts = {};
+    let allSolicitudes = [];
+    let allProductos = [];
+    let allUsuariosDisponibles = [];
+    let allDisponibilidad = {};
+    let currentUser = { email: null, name: null, nivel: null, isAuthenticated: false, id: null };
+    let charts = {};
+    let currentDisponibilidadMonth = new Date();
+    let selectedDates = [];
 
-        const elements = {
-            loadingScreen: document.getElementById('loadingScreen'),
-            app: document.getElementById('app'),
-            loginButton: document.getElementById('loginButton'),
-            signOutButton: document.getElementById('signOutButton'),
-            loginModal: document.getElementById('loginModal'),
-            closeLoginModalBtn: document.getElementById('closeLoginModalBtn'),
-            loginForm: document.getElementById('loginForm'),
-            emailInput: document.getElementById('emailInput'),
-            passwordInput: document.getElementById('passwordInput'),
-            loginBtnModal: document.getElementById('loginBtnModal'),
-            loginMessage: document.getElementById('loginMessage'),
-            userNameDisplay: document.getElementById('userNameDisplay'),
-            solicitudesTab: document.getElementById('solicitudesTab'),
-            dashboardTab: document.getElementById('dashboardTab'),
-            reportesTab: document.getElementById('reportesTab'),
-            configTab: document.getElementById('configTab'),
-            solicitudesView: document.getElementById('solicitudesView'),
-            dashboardView: document.getElementById('dashboardView'),
-            reportesView: document.getElementById('reportesView'),
-            configView: document.getElementById('configView'),
-            solicitudesList: document.getElementById('solicitudesList'),
-            addSolicitudBtn: document.getElementById('addSolicitudBtn'),
-            solicitudModal: document.getElementById('solicitudModal'),
-            closeModalBtn: document.getElementById('closeModalBtn'),
-            solicitudForm: document.getElementById('solicitudForm'),
-            cancelFormBtn: document.getElementById('cancelFormBtn'),
-            productosContainer: document.getElementById('productosContainer'),
-            notificationContainer: document.getElementById('notificationContainer'),
-            totalSolicitudes: document.getElementById('totalSolicitudes'),
-            totalProductosActivos: document.getElementById('totalProductosActivos'),
-            solicitudesEnProceso: document.getElementById('solicitudesEnProceso'),
-            solicitudUser: document.getElementById('solicitudUser'),
-            solicitudEmail: document.getElementById('solicitudEmail'),
-            solicitudDate: document.getElementById('solicitudDate'),
-            solicitudType: document.getElementById('solicitudType'),
-            solicitudLocation: document.getElementById('solicitudLocation'),
-            solicitudComments: document.getElementById('solicitudComments'),
-            reportTableBody: document.getElementById('reportTableBody'),
-            reportFilter: document.getElementById('reportFilter'),
-            sidebar: document.getElementById('sidebar'),
-            menuBtn: document.getElementById('menuBtn'),
-            closeSidebarBtn: document.getElementById('closeSidebarBtn'),
-            backdrop: document.getElementById('backdrop')
-        };
+    const elements = {
+        loadingScreen: document.getElementById('loadingScreen'),
+        app: document.getElementById('app'),
+        loginButton: document.getElementById('loginButton'),
+        signOutButton: document.getElementById('signOutButton'),
+        loginModal: document.getElementById('loginModal'),
+        closeLoginModalBtn: document.getElementById('closeLoginModalBtn'),
+        loginForm: document.getElementById('loginForm'),
+        emailInput: document.getElementById('emailInput'),
+        passwordInput: document.getElementById('passwordInput'),
+        loginBtnModal: document.getElementById('loginBtnModal'),
+        loginMessage: document.getElementById('loginMessage'),
+        userNameDisplay: document.getElementById('userNameDisplay'),
+        solicitudesTab: document.getElementById('solicitudesTab'),
+        dashboardTab: document.getElementById('dashboardTab'),
+        reportesTab: document.getElementById('reportesTab'),
+        configTab: document.getElementById('configTab'),
+        disponibilidadTab: document.getElementById('disponibilidadTab'),
+        solicitudesView: document.getElementById('solicitudesView'),
+        dashboardView: document.getElementById('dashboardView'),
+        reportesView: document.getElementById('reportesView'),
+        configView: document.getElementById('configView'),
+        disponibilidadView: document.getElementById('disponibilidadView'),
+        solicitudesList: document.getElementById('solicitudesList'),
+        addSolicitudBtn: document.getElementById('addSolicitudBtn'),
+        solicitudModal: document.getElementById('solicitudModal'),
+        closeModalBtn: document.getElementById('closeModalBtn'),
+        solicitudForm: document.getElementById('solicitudForm'),
+        cancelFormBtn: document.getElementById('cancelFormBtn'),
+        productosContainer: document.getElementById('productosContainer'),
+        notificationContainer: document.getElementById('notificationContainer'),
+        totalSolicitudes: document.getElementById('totalSolicitudes'),
+        totalProductosActivos: document.getElementById('totalProductosActivos'),
+        solicitudesEnProceso: document.getElementById('solicitudesEnProceso'),
+        solicitudUser: document.getElementById('solicitudUser'),
+        solicitudEmail: document.getElementById('solicitudEmail'),
+        solicitudDate: document.getElementById('solicitudDate'),
+        solicitudType: document.getElementById('solicitudType'),
+        solicitudLocation: document.getElementById('solicitudLocation'),
+        solicitudComments: document.getElementById('solicitudComments'),
+        reportTableBody: document.getElementById('reportTableBody'),
+        reportFilter: document.getElementById('reportFilter'),
+        sidebar: document.getElementById('sidebar'),
+        menuBtn: document.getElementById('menuBtn'),
+        closeSidebarBtn: document.getElementById('closeSidebarBtn'),
+        backdrop: document.getElementById('backdrop'),
+        disponibilidadUserSelect: document.getElementById('disponibilidadUserSelect'),
+        currentMonthYear: document.getElementById('currentMonthYear'),
+        prevMonthBtn: document.getElementById('prevMonthBtn'),
+        nextMonthBtn: document.getElementById('nextMonthBtn'),
+        calendar: document.getElementById('calendar'),
+        saveDisponibilidadBtn: document.getElementById('saveDisponibilidadBtn'),
+    };
 
-        function showNotification(message, type = 'info') {
-            const notification = document.createElement('div');
-            notification.className = `p-4 rounded-md shadow-lg text-white font-medium mb-2 transition-transform transform translate-x-full duration-500 ease-out ${type === 'success' ? 'bg-green-500' : (type === 'error' ? 'bg-red-500' : 'bg-blue-500')}`;
-            notification.textContent = message;
-            elements.notificationContainer.appendChild(notification);
-            setTimeout(() => notification.classList.remove('translate-x-full'), 100);
-            setTimeout(() => {
-                notification.classList.add('translate-x-full');
-                notification.addEventListener('transitionend', () => notification.remove());
-            }, 5000);
+    function showNotification(message, type = 'info') {
+        const notification = document.createElement('div');
+        notification.className = `p-4 rounded-md shadow-lg text-white font-medium mb-2 transition-transform transform translate-x-full duration-500 ease-out ${type === 'success' ? 'bg-green-500' : (type === 'error' ? 'bg-red-500' : 'bg-blue-500')}`;
+        notification.textContent = message;
+        elements.notificationContainer.appendChild(notification);
+        setTimeout(() => notification.classList.remove('translate-x-full'), 100);
+        setTimeout(() => {
+            notification.classList.add('translate-x-full');
+            notification.addEventListener('transitionend', () => notification.remove());
+        }, 5000);
+    }
+
+    function switchView(viewId) {
+        document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+        document.querySelectorAll('a[id$="Tab"]').forEach(tab => tab.classList.replace('tab-active', 'tab-inactive'));
+        const targetTab = document.getElementById(`${viewId.replace('View', 'Tab')}`);
+        if (targetTab) {
+            targetTab.classList.replace('tab-inactive', 'tab-active');
         }
-
-        function switchView(viewId) {
-            document.querySelectorAll('.view-content').forEach(view => view.classList.remove('active'));
-            document.getElementById(viewId).classList.add('active');
-            document.querySelectorAll('a[id$="Tab"]').forEach(tab => tab.classList.replace('tab-active', 'tab-inactive'));
-            const targetTab = document.getElementById(`${viewId.replace('View', 'Tab')}`);
-            if (targetTab) {
-                targetTab.classList.replace('tab-inactive', 'tab-active');
-            }
-            if (window.innerWidth < 768) {
-                toggleSidebar();
-            }
+        if (window.innerWidth < 768) {
+            toggleSidebar();
         }
+    }
 
-        function toggleSidebar() {
-            const sidebar = elements.sidebar;
-            const backdrop = elements.backdrop;
-            if (sidebar.classList.contains('-translate-x-full')) {
-                sidebar.classList.remove('-translate-x-full');
-                sidebar.classList.add('translate-x-0');
-                backdrop.style.display = 'block';
+    function toggleSidebar() {
+        const sidebar = elements.sidebar;
+        const backdrop = elements.backdrop;
+        if (sidebar.classList.contains('-translate-x-full')) {
+            sidebar.classList.remove('-translate-x-full');
+            sidebar.classList.add('translate-x-0');
+            backdrop.style.display = 'block';
+        } else {
+            sidebar.classList.remove('translate-x-0');
+            sidebar.classList.add('-translate-x-full');
+            backdrop.style.display = 'none';
+        }
+    }
+
+    async function handleLogin(e) {
+        e.preventDefault();
+        const email = elements.emailInput.value;
+        const password = elements.passwordInput.value;
+        elements.loginBtnModal.disabled = true;
+        elements.loginBtnModal.textContent = 'Verificando...';
+
+        try {
+            const url = new URL(GOOGLE_APPS_SCRIPT_URL);
+            url.searchParams.append('action', 'login');
+            url.searchParams.append('email', email);
+            url.searchParams.append('password', password);
+
+            const response = await fetch(url);
+            const result = await response.json();
+
+            if (result.success) {
+                currentUser = {
+                    id: result.data.id,
+                    email: result.data.correo,
+                    name: result.data.nombre,
+                    nivel: result.data.nivel,
+                    isAuthenticated: true,
+                };
+                elements.loginModal.classList.add('hidden');
+                elements.userNameDisplay.textContent = `${currentUser.name} - Nivel ${currentUser.nivel}`;
+                elements.userNameDisplay.classList.remove('hidden');
+                setupAppForUserRole();
+                await loadData();
+                showNotification('Inicio de sesión exitoso.', 'success');
             } else {
-                sidebar.classList.remove('translate-x-0');
-                sidebar.classList.add('-translate-x-full');
-                backdrop.style.display = 'none';
+                elements.loginMessage.textContent = result.error || 'Credenciales inválidas.';
             }
+        } catch (error) {
+            console.error('Login error:', error);
+            elements.loginMessage.textContent = 'Error de conexión. Inténtalo de nuevo.';
+        } finally {
+            elements.loginBtnModal.disabled = false;
+            elements.loginBtnModal.textContent = 'Ingresar';
         }
+    }
 
-        async function handleLogin(e) {
-            e.preventDefault();
-            const email = elements.emailInput.value;
-            const password = elements.passwordInput.value;
-            elements.loginBtnModal.disabled = true;
-            elements.loginBtnModal.textContent = 'Verificando...';
-
-            try {
-                const url = new URL(GOOGLE_APPS_SCRIPT_URL);
-                url.searchParams.append('action', 'login');
-                url.searchParams.append('email', email);
-                url.searchParams.append('password', password);
-
-                const response = await fetch(url);
-                const result = await response.json();
-
-                if (result.success) {
-                    currentUser = {
-                        email: result.data.correo,
-                        name: result.data.nombre,
-                        nivel: result.data.nivel,
-                        isAuthenticated: true
-                    };
-                    elements.loginModal.classList.add('hidden');
-                    elements.userNameDisplay.textContent = `${currentUser.name} - Nivel ${currentUser.nivel}`;
-                    elements.userNameDisplay.classList.remove('hidden');
-                    setupAppForUserRole();
-                    await loadData();
-                    showNotification('Inicio de sesión exitoso.', 'success');
-                } else {
-                    elements.loginMessage.textContent = result.error || 'Credenciales inválidas.';
-                }
-            } catch (error) {
-                console.error('Login error:', error);
-                elements.loginMessage.textContent = 'Error de conexión. Inténtalo de nuevo.';
-            } finally {
-                elements.loginBtnModal.disabled = false;
-                elements.loginBtnModal.textContent = 'Ingresar';
-            }
-        }
-
-        function setupAppForUserRole() {
-            elements.loginButton.classList.add('hidden');
-            elements.signOutButton.classList.remove('hidden');
-            if (currentUser.nivel == 1) {
-                document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
-                switchView('solicitudesView');
-            } else {
-                document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-                switchView('solicitudesView');
-            }
-        }
-
-        async function loadData() {
-            elements.loadingScreen.classList.remove('hidden');
-            elements.app.classList.add('hidden');
-
-            try {
-                const productosResponse = await fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getProductos`);
-                const productosData = await productosResponse.json();
-                if (productosData.success) {
-                    allProductos = productosData.data;
-                    renderProductosForForm();
-                } else {
-                    throw new Error(productosData.error);
-                }
-                let solicitudesUrl;
-                if (currentUser.isAuthenticated && currentUser.nivel == 1) {
-                    solicitudesUrl = `${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=admin`;
-                } else if (currentUser.isAuthenticated) {
-                    solicitudesUrl = `${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=${currentUser.email}&limit=5`;
-                } else {
-                    solicitudesUrl = `${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=guest`;
-                }
-                const solicitudesResponse = await fetch(solicitudesUrl);
-                const solicitudesData = await solicitudesResponse.json();
-                if (solicitudesData.success) {
-                    allSolicitudes = solicitudesData.data;
-                    renderSolicitudes();
-                    if (currentUser.nivel == 1) {
-                        updateDashboard();
-                        renderReportTable();
-                    }
-                } else {
-                    throw new Error(solicitudesData.error);
-                }
-            } catch (error) {
-                console.error('Error al cargar datos:', error);
-                showNotification('Error al cargar datos: ' + error.message, 'error');
-            } finally {
-                elements.loadingScreen.classList.add('hidden');
-                elements.app.classList.remove('hidden');
-            }
-        }
-
-        function renderSolicitudes() {
-            const list = elements.solicitudesList;
-            list.innerHTML = '';
-
-            let solicitudesToShow = allSolicitudes;
-            if (currentUser.nivel !== 1) {
-                 solicitudesToShow = allSolicitudes.filter(sol => sol.Activa === true);
-            }
-            if (solicitudesToShow.length === 0) {
-                list.innerHTML = '<p class="text-center text-gray-500">No hay solicitudes para mostrar.</p>';
-                return;
-            }
-            solicitudesToShow.forEach(solicitud => {
-                const item = document.createElement('div');
-                item.className = 'bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition duration-300 ease-in-out';
-                let productosText = 'No especificado';
-                try {
-                    const productos = JSON.parse(solicitud.Productos || '{}');
-                    productosText = Object.entries(productos)
-                        .map(([nombre, cantidad]) => `${nombre}: ${cantidad}`)
-                        .join(', ');
-                } catch (e) {
-                    console.error("Error parsing Productos JSON:", e);
-                }
-                item.innerHTML = `
-                    <div class="flex justify-between items-center">
-                        <h4 class="text-lg font-medium text-gray-800">Solicitud ID: ${solicitud.ID}</h4>
-                        <span class="text-sm text-gray-500">${solicitud.Fecha}</span>
-                    </div>
-                    <p class="text-gray-600 mt-1"><strong class="font-medium">Usuario:</strong> ${solicitud.Usuario}</p>
-                    <p class="text-gray-600 mt-1"><strong class="font-medium">Correo:</strong> ${solicitud.Email}</p>
-                    <p class="text-gray-600 mt-1"><strong class="font-medium">Ubicación:</strong> ${solicitud.Ubicacion}</p>
-                    <p class="text-gray-600 mt-1"><strong class="font-medium">Productos:</strong> ${productosText || 'No especificado'}</p>
-                    <p class="text-sm text-gray-500 mt-2"><strong class="font-medium">Destino:</strong> ${solicitud.Comentarios || 'N/A'}</p>
-                `;
-                list.appendChild(item);
-            });
-        }
-
-        function renderProductosForForm() {
-            const container = elements.productosContainer;
-            container.innerHTML = '';
-            allProductos.filter(p => p.Activo).forEach(producto => {
-                const div = document.createElement('div');
-                div.className = 'bg-gray-50 p-4 rounded-lg shadow-sm border border-gray-200';
-                div.innerHTML = `
-                    <h5 class="text-sm font-semibold text-gray-700 mb-2">${producto.Nombre}</h5>
-                    <label for="cantidad-${producto.Nombre}" class="sr-only">Cantidad de ${producto.Nombre}</label>
-                    <input type="number" id="cantidad-${producto.Nombre}" name="cantidad-${producto.Nombre}" min="0" value="0" class="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-center" />
-                `;
-                container.appendChild(div);
-            });
-        }
-
-        function updateDashboard() {
-            if (currentUser.nivel != 1) return;
-            if (elements.totalSolicitudes) elements.totalSolicitudes.textContent = allSolicitudes.length;
-            const activos = allProductos.filter(p => p.Activo).length;
-            if (elements.totalProductosActivos) elements.totalProductosActivos.textContent = activos;
-            const solicitudesEnProceso = allSolicitudes.filter(s => s.Activa === true).length;
-            if (elements.solicitudesEnProceso) elements.solicitudesEnProceso.textContent = solicitudesEnProceso;
-            if (allSolicitudes.length > 0) {
-                renderTopProductsChart();
-                renderLocationChart();
-            } else {
-                if(document.getElementById('topProductsChart')) document.getElementById('topProductsChart').parentNode.innerHTML = '<p class="text-center text-gray-500 p-8">No hay datos de productos para mostrar.</p>';
-                if(document.getElementById('locationChart')) document.getElementById('locationChart').parentNode.innerHTML = '<p class="text-center text-gray-500 p-8">No hay datos de ubicación para mostrar.</p>';
-            }
-        }
-
-        function renderTopProductsChart() {
-            const chartCanvas = document.getElementById('topProductsChart');
-            if (!chartCanvas) return;
-            const ctx = chartCanvas.getContext('2d');
-            const productCounts = {};
-            allSolicitudes.forEach(s => {
-                try {
-                    const productos = JSON.parse(s.Productos || '{}');
-                    for (const [producto, cantidad] of Object.entries(productos)) {
-                        productCounts[producto] = (productCounts[producto] || 0) + parseInt(cantidad);
-                    }
-                } catch(e) {}
-            });
-            const sortedProducts = Object.entries(productCounts)
-                .sort(([, a], [, b]) => b - a)
-                .slice(0, 10);
-            const labels = sortedProducts.map(p => p[0]);
-            const data = sortedProducts.map(p => p[1]);
-            if (charts.topProducts) charts.topProducts.destroy();
-            charts.topProducts = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Cantidad Solicitada',
-                        data: data,
-                        backgroundColor: 'rgba(59, 130, 246, 0.6)',
-                        borderColor: 'rgba(59, 130, 246, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: true }
-                    },
-                    plugins: {
-                        legend: { display: false }
-                    }
-                }
-            });
-        }
-
-        function renderLocationChart() {
-            const chartCanvas = document.getElementById('locationChart');
-            if (!chartCanvas) return;
-            const ctx = chartCanvas.getContext('2d');
-            const locationCounts = {};
-            allSolicitudes.forEach(s => {
-                const location = s.Ubicacion || 'Sin Ubicación';
-                locationCounts[location] = (locationCounts[location] || 0) + 1;
-            });
-            const labels = Object.keys(locationCounts);
-            const data = Object.values(locationCounts);
-            if (charts.location) charts.location.destroy();
-            charts.location = new Chart(ctx, {
-                type: 'doughnut',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: 'Solicitudes',
-                        data: data,
-                        backgroundColor: [
-                            '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#a855f7'
-                        ],
-                        hoverOffset: 4
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        legend: {
-                            position: 'right',
-                        }
-                    }
-                }
-            });
-        }
-
-        function renderReportTable() {
-            const tbody = elements.reportTableBody;
-            tbody.innerHTML = '';
-
-            let solicitudesToRender = allSolicitudes;
-            if (elements.reportFilter.value === 'active') {
-                solicitudesToRender = allSolicitudes.filter(sol => sol.Activa === true);
-            }
-
-            if (solicitudesToRender.length === 0) {
-                tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-gray-500">No hay datos de solicitudes para el reporte.</td></tr>';
-                return;
-            }
-            solicitudesToRender.forEach(solicitud => {
-                const row = document.createElement('tr');
-                row.className = 'hover:bg-gray-50';
-                let productosText = 'N/A';
-                try {
-                    const productos = JSON.parse(solicitud.Productos);
-                    productosText = Object.entries(productos)
-                        .map(([nombre, cantidad]) => `${nombre}: ${cantidad}`)
-                        .join(', ');
-                } catch (e) {
-                    console.error("Error parsing Productos JSON for report:", e);
-                }
-                const activeStatus = solicitud.Activa ? 'Sí' : 'No';
-                const actionButton = solicitud.Activa ? `
-                    <button data-id="${solicitud.ID}" class="finalize-btn bg-green-500 text-white py-1 px-3 rounded-md text-xs font-medium hover:bg-green-600 transition-colors">Finalizar</button>
-                ` : `<span class="text-gray-400 text-xs">Finalizada</span>`;
-                row.innerHTML = `
-                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${solicitud.ID}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${solicitud.Fecha}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${solicitud.Usuario}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${solicitud.Ubicacion}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${solicitud.Tipo}</td>
-                    <td class="px-6 py-4 text-sm text-gray-500">${solicitud.Comentarios}</td>
-                    <td class="px-6 py-4 text-sm text-gray-500">${productosText}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${activeStatus}</td>
-                    <td class="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">${actionButton}</td>
-                `;
-                tbody.appendChild(row);
-            });
-
-            document.querySelectorAll('.finalize-btn').forEach(button => {
-                button.addEventListener('click', async (e) => {
-                    const id = e.target.dataset.id;
-                    e.target.disabled = true;
-                    e.target.textContent = 'Enviando...';
-                    const result = await postToGoogleSheets('finalizeSolicitud', { solicitudId: id });
-                    if (result.success) {
-                        showNotification('Solicitud finalizada con éxito.', 'success');
-                        loadData();
-                    } else {
-                        showNotification('Error al finalizar la solicitud.', 'error');
-                        e.target.disabled = false;
-                        e.target.textContent = 'Finalizar';
-                    }
-                });
-            });
-        }
-
-        elements.reportFilter.addEventListener('change', renderReportTable);
-        elements.loginButton.addEventListener('click', () => elements.loginModal.classList.remove('hidden'));
-        elements.closeLoginModalBtn.addEventListener('click', () => elements.loginModal.classList.add('hidden'));
-        elements.loginForm.addEventListener('submit', handleLogin);
-        elements.signOutButton.addEventListener('click', () => {
-            currentUser = { email: null, name: null, nivel: null, isAuthenticated: false };
-            elements.userNameDisplay.textContent = '';
-            elements.userNameDisplay.classList.add('hidden');
-            elements.loginButton.classList.remove('hidden');
-            elements.signOutButton.classList.add('hidden');
+    function setupAppForUserRole() {
+        elements.loginButton.classList.add('hidden');
+        elements.signOutButton.classList.remove('hidden');
+        if (currentUser.nivel == 1) {
+            document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+            switchView('dashboardView');
+        } else {
             document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
             switchView('solicitudesView');
-            loadData();
-            showNotification('Sesión cerrada.', 'info');
-        });
+        }
+    }
 
-        elements.menuBtn.addEventListener('click', toggleSidebar);
-        elements.closeSidebarBtn.addEventListener('click', toggleSidebar);
-        elements.backdrop.addEventListener('click', toggleSidebar);
+    async function loadData() {
+        elements.loadingScreen.classList.remove('hidden');
+        elements.app.classList.add('hidden');
 
-        elements.solicitudesTab.addEventListener('click', (e) => { e.preventDefault(); switchView('solicitudesView'); renderSolicitudes(); });
-        if (elements.dashboardTab) { elements.dashboardTab.addEventListener('click', (e) => { e.preventDefault(); switchView('dashboardView'); updateDashboard(); }); }
-        if (elements.reportesTab) { elements.reportesTab.addEventListener('click', (e) => { e.preventDefault(); switchView('reportesView'); renderReportTable(); }); }
-        if (elements.configTab) { elements.configTab.addEventListener('click', (e) => { e.preventDefault(); switchView('configView'); }); }
+        try {
+            const [productosResponse, solicitudesResponse, usuariosDisponiblesResponse, disponibilidadResponse] = await Promise.all([
+                fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getProductos`),
+                fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=${currentUser.isAuthenticated ? currentUser.email : 'guest'}`),
+                fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getUsuariosDisponibles`),
+                fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getDisponibilidad`)
+            ]);
 
-        elements.addSolicitudBtn.addEventListener('click', () => {
-            if (!currentUser.isAuthenticated) {
-                showNotification('Debes iniciar sesión para hacer una solicitud.', 'error');
-                return;
+            const productosData = await productosResponse.json();
+            if (productosData.success) {
+                allProductos = productosData.data;
+                renderProductosForForm();
+            } else {
+                throw new Error(productosData.error);
             }
-            elements.solicitudUser.value = currentUser.name;
-            elements.solicitudEmail.value = currentUser.email;
-            elements.solicitudDate.valueAsDate = new Date();
-            elements.solicitudModal.classList.remove('hidden');
-        });
-        elements.closeModalBtn.addEventListener('click', () => elements.solicitudModal.classList.add('hidden'));
-        elements.cancelFormBtn.addEventListener('click', () => elements.solicitudModal.classList.add('hidden'));
 
-        elements.solicitudForm.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const selectedProducts = {};
-            document.querySelectorAll('#productosContainer input[type="number"]').forEach(input => {
-                const productName = input.id.replace('cantidad-', '');
-                const quantity = parseInt(input.value);
-                if (quantity > 0) {
-                    selectedProducts[productName] = quantity;
+            const solicitudesData = await solicitudesResponse.json();
+            if (solicitudesData.success) {
+                allSolicitudes = solicitudesData.data;
+                renderSolicitudes();
+            } else {
+                throw new Error(solicitudesData.error);
+            }
+
+            const usuariosDisponiblesData = await usuariosDisponiblesResponse.json();
+            if (usuariosDisponiblesData.success) {
+                allUsuariosDisponibles = usuariosDisponiblesData.data;
+                renderUsuariosDisponiblesSelect();
+            } else {
+                throw new Error(usuariosDisponiblesData.error);
+            }
+
+            const disponibilidadData = await disponibilidadResponse.json();
+            if (disponibilidadData.success) {
+                allDisponibilidad = disponibilidadData.data;
+            } else {
+                throw new Error(disponibilidadData.error);
+            }
+
+            if (currentUser.nivel == 1) {
+                updateDashboard();
+                renderReportTable();
+                renderCalendar();
+            }
+
+        } catch (error) {
+            console.error('Error al cargar datos:', error);
+            showNotification('Error al cargar datos: ' + error.message, 'error');
+        } finally {
+            elements.loadingScreen.classList.add('hidden');
+            elements.app.classList.remove('hidden');
+        }
+    }
+
+    function renderSolicitudes() {
+        const list = elements.solicitudesList;
+        list.innerHTML = '';
+        let solicitudesToShow = allSolicitudes;
+        if (currentUser.nivel !== 1) {
+            solicitudesToShow = allSolicitudes.filter(sol => sol.Email === currentUser.email && sol.Activa === true);
+        }
+        if (solicitudesToShow.length === 0) {
+            list.innerHTML = '<p class="text-center text-gray-500">No hay solicitudes para mostrar.</p>';
+            return;
+        }
+        solicitudesToShow.forEach(solicitud => {
+            const item = document.createElement('div');
+            item.className = 'bg-white p-6 rounded-lg shadow-md hover:shadow-xl transition duration-300 ease-in-out';
+            let productosText = 'No especificado';
+            try {
+                const productos = JSON.parse(solicitud.Productos || '{}');
+                productosText = Object.entries(productos)
+                    .map(([nombre, cantidad]) => `${nombre}: ${cantidad}`)
+                    .join(', ');
+            } catch (e) {
+                console.error("Error parsing Productos JSON:", e);
+            }
+            item.innerHTML = `
+                <div class="flex justify-between items-center">
+                    <h4 class="text-lg font-medium text-gray-800">Solicitud ID: ${solicitud.ID}</h4>
+                    <span class="text-sm text-gray-500">${solicitud.Fecha}</span>
+                </div>
+                <p class="text-gray-600 mt-1"><strong class="font-medium">Usuario:</strong> ${solicitud.Usuario}</p>
+                <p class="text-gray-600 mt-1"><strong class="font-medium">Correo:</strong> ${solicitud.Email}</p>
+                <p class="text-gray-600 mt-1"><strong class="font-medium">Ubicación:</strong> ${solicitud.Ubicacion}</p>
+                <p class="text-gray-600 mt-1"><strong class="font-medium">Productos:</strong> ${productosText || 'No especificado'}</p>
+                <p class="text-sm text-gray-500 mt-2"><strong class="font-medium">Destino:</strong> ${solicitud.Comentarios || 'N/A'}</p>
+            `;
+            list.appendChild(item);
+        });
+    }
+
+    function renderProductosForForm() {
+        const container = elements.productosContainer;
+        container.innerHTML = '';
+        allProductos.filter(p => p.Activo).forEach(producto => {
+            const div = document.createElement('div');
+            div.className = 'bg-white p-4 rounded-lg shadow-sm border border-gray-200 text-center flex flex-col items-center justify-center';
+            div.innerHTML = `
+                <h5 class="text-sm font-semibold text-gray-700 mb-2">${producto.Nombre}</h5>
+                <input type="number" id="cantidad-${producto.Nombre}" name="cantidad-${producto.Nombre}" min="0" value="0" class="mt-1 block w-24 rounded-md border-gray-300 shadow-sm focus:border-blue-500 focus:ring-blue-500 p-2 text-center" />
+            `;
+            container.appendChild(div);
+        });
+    }
+
+    function updateDashboard() {
+        if (currentUser.nivel != 1) return;
+        if (elements.totalSolicitudes) elements.totalSolicitudes.textContent = allSolicitudes.length;
+        const activos = allProductos.filter(p => p.Activo).length;
+        if (elements.totalProductosActivos) elements.totalProductosActivos.textContent = activos;
+        const solicitudesEnProceso = allSolicitudes.filter(s => s.Activa === true).length;
+        if (elements.solicitudesEnProceso) elements.solicitudesEnProceso.textContent = solicitudesEnProceso;
+        if (allSolicitudes.length > 0) {
+            renderTopProductsChart();
+            renderLocationChart();
+        } else {
+            if(document.getElementById('topProductsChart')) document.getElementById('topProductsChart').parentNode.innerHTML = '<p class="text-center text-gray-500 p-8">No hay datos de productos para mostrar.</p>';
+            if(document.getElementById('locationChart')) document.getElementById('locationChart').parentNode.innerHTML = '<p class="text-center text-gray-500 p-8">No hay datos de ubicación para mostrar.</p>';
+        }
+    }
+
+    function renderTopProductsChart() {
+        const chartCanvas = document.getElementById('topProductsChart');
+        if (!chartCanvas) return;
+        const ctx = chartCanvas.getContext('2d');
+        const productCounts = {};
+        allSolicitudes.forEach(s => {
+            try {
+                const productos = JSON.parse(s.Productos || '{}');
+                for (const [producto, cantidad] of Object.entries(productos)) {
+                    productCounts[producto] = (productCounts[producto] || 0) + parseInt(cantidad);
+                }
+            } catch(e) {}
+        });
+        const sortedProducts = Object.entries(productCounts)
+            .sort(([, a], [, b]) => b - a)
+            .slice(0, 10);
+        const labels = sortedProducts.map(p => p[0]);
+        const data = sortedProducts.map(p => p[1]);
+        if (charts.topProducts) charts.topProducts.destroy();
+        charts.topProducts = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Cantidad Solicitada',
+                    data: data,
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: { beginAtZero: true }
+                },
+                plugins: {
+                    legend: { display: false }
+                }
+            }
+        });
+    }
+
+    function renderLocationChart() {
+        const chartCanvas = document.getElementById('locationChart');
+        if (!chartCanvas) return;
+        const ctx = chartCanvas.getContext('2d');
+        const locationCounts = {};
+        allSolicitudes.forEach(s => {
+            const location = s.Ubicacion || 'Sin Ubicación';
+            locationCounts[location] = (locationCounts[location] || 0) + 1;
+        });
+        const labels = Object.keys(locationCounts);
+        const data = Object.values(locationCounts);
+        if (charts.location) charts.location.destroy();
+        charts.location = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Solicitudes',
+                    data: data,
+                    backgroundColor: [
+                        '#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#6366f1', '#a855f7'
+                    ],
+                    hoverOffset: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        position: 'right',
+                    }
+                }
+            }
+        });
+    }
+
+    function renderReportTable() {
+        const tbody = elements.reportTableBody;
+        tbody.innerHTML = '';
+
+        let solicitudesToRender = allSolicitudes;
+        if (elements.reportFilter.value === 'active') {
+            solicitudesToRender = allSolicitudes.filter(sol => sol.Activa === true);
+        }
+
+        if (solicitudesToRender.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="11" class="text-center p-8 text-gray-500">No hay datos de solicitudes para el reporte.</td></tr>';
+            return;
+        }
+
+        solicitudesToRender.forEach(solicitud => {
+            const mainRow = document.createElement('tr');
+            mainRow.className = 'hover:bg-gray-50';
+            const detailRow = document.createElement('tr');
+            detailRow.className = 'expanded-row hidden';
+
+            mainRow.dataset.solicitudId = solicitud.ID;
+            detailRow.dataset.solicitudId = solicitud.ID;
+
+            let productosText = 'N/A';
+            try {
+                const productos = JSON.parse(solicitud.Productos);
+                productosText = Object.entries(productos)
+                    .map(([nombre, cantidad]) => `<div class="flex justify-between w-full"><span>${nombre}:</span><span>${cantidad}</span></div>`)
+                    .join('');
+            } catch (e) {
+                console.error("Error parsing Productos JSON for report:", e);
+            }
+            const activeStatus = solicitud.Activa ? 'Sí' : 'No';
+            const actionButtonHtml = solicitud.Activa ? `
+                <button data-id="${solicitud.ID}" class="finalize-btn bg-green-500 text-white py-1 px-3 rounded-md text-xs font-medium hover:bg-green-600 transition-colors">Finalizar</button>
+            ` : `<span class="text-gray-400 text-xs">Finalizada</span>`;
+
+            let assignDropdownHtml = '';
+            if (solicitud.Activa) {
+                assignDropdownHtml = `<select id="assign-${solicitud.ID}" data-id="${solicitud.ID}" class="assign-dropdown p-1 border rounded-md text-sm">
+                    <option value="">Seleccionar...</option>
+                    ${allUsuariosDisponibles.map(user => `<option value="${user.ID}">${user.Nombre}</option>`).join('')}
+                </select>`;
+            } else {
+                assignDropdownHtml = `<span class="text-xs text-gray-400">${solicitud.Responsable || 'N/A'}</span>`;
+            }
+
+            const formattedDate = solicitud.Fecha ? solicitud.Fecha.split('T')[0] : 'N/A';
+
+            // Main row content
+            mainRow.innerHTML = `
+                <td class="w-[5%] px-6 py-4 text-center">
+                    <button class="expand-btn">
+                        <i class="fas fa-plus text-gray-600"></i>
+                    </button>
+                </td>
+                <td class="w-[5%] px-6 py-4 text-sm font-medium text-gray-900 overflow-hidden text-ellipsis">${solicitud.ID}</td>
+                <td class="w-[10%] px-6 py-4 text-sm text-gray-500 overflow-hidden text-ellipsis">${formattedDate}</td>
+                <td class="w-[15%] px-6 py-4 text-sm text-gray-500 overflow-hidden text-ellipsis">${solicitud.Usuario}</td>
+                <td class="w-[15%] px-6 py-4 text-sm text-gray-500 overflow-hidden text-ellipsis">${solicitud.Ubicacion}</td>
+                <td class="w-[10%] px-6 py-4 text-sm text-gray-500 report-table-hidden">${solicitud.Tipo}</td>
+                <td class="w-[20%] px-6 py-4 text-sm text-gray-500 report-table-hidden">${solicitud.Comentarios}</td>
+                <td class="w-[20%] px-6 py-4 text-sm text-gray-500 report-table-hidden">${productosText}</td>
+                <td class="w-[5%] px-6 py-4 text-sm text-gray-500 report-table-hidden">${activeStatus}</td>
+                <td class="w-[15%] px-6 py-4 text-sm report-table-hidden">${assignDropdownHtml}</td>
+                <td class="w-[15%] px-6 py-4 text-right text-sm font-medium report-table-hidden">${actionButtonHtml}</td>
+            `;
+
+            // Detail row content
+            detailRow.innerHTML = `
+                <td colspan="11">
+                    <div class="p-4 space-y-2">
+                        <div class="md:hidden detail-item">
+                            <span>Tipo:</span>
+                            <span>${solicitud.Tipo}</span>
+                        </div>
+                        <div class="md:hidden detail-item">
+                            <span>Comentarios:</span>
+                            <span>${solicitud.Comentarios || 'N/A'}</span>
+                        </div>
+                        <div class="md:hidden detail-item">
+                            <span>Productos:</span>
+                            <div class="flex flex-col items-end space-y-1">${productosText || 'N/A'}</div>
+                        </div>
+                        <div class="md:hidden detail-item">
+                            <span>Activa:</span>
+                            <span>${activeStatus}</span>
+                        </div>
+                        <div class="md:hidden detail-item">
+                            <span>Responsable:</span>
+                            <span>${solicitud.Responsable || 'N/A'}</span>
+                        </div>
+                        <div class="md:hidden detail-item">
+                            <span>Acciones:</span>
+                            <span>${actionButtonHtml}</span>
+                        </div>
+                    </div>
+                </td>
+            `;
+
+            // Append both rows to the table body
+            tbody.appendChild(mainRow);
+            tbody.appendChild(detailRow);
+
+            // Add event listener to the expand button
+            mainRow.querySelector('.expand-btn').addEventListener('click', () => {
+                const isHidden = detailRow.classList.contains('hidden');
+                if (isHidden) {
+                    detailRow.classList.remove('hidden');
+                    mainRow.querySelector('.expand-btn i').classList.replace('fa-plus', 'fa-minus');
+                } else {
+                    detailRow.classList.add('hidden');
+                    mainRow.querySelector('.expand-btn i').classList.replace('fa-minus', 'fa-plus');
+                }
+            });
+        });
+
+        // Add event listeners for finalize buttons
+        document.querySelectorAll('.finalize-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const id = e.target.dataset.id;
+                const dropdown = document.getElementById(`assign-${id}`);
+                const responsableId = dropdown ? dropdown.value : null;
+                const responsableName = dropdown ? dropdown.options[dropdown.selectedIndex].text : null;
+
+                if (!responsableId) {
+                    showNotification('Por favor, selecciona un responsable para finalizar la solicitud.', 'error');
+                    return;
+                }
+
+                const solicitud = allSolicitudes.find(s => s.ID === id);
+                const solicitudDate = solicitud.Fecha ? solicitud.Fecha.split('T')[0] : null;
+
+                if (solicitudDate && allDisponibilidad[responsableId] && allDisponibilidad[responsableId].includes(solicitudDate)) {
+                    showNotification(`La persona seleccionada (${responsableName}) no está disponible en la fecha de la solicitud (${solicitudDate}).`, 'error');
+                    return;
+                }
+
+                e.target.disabled = true;
+                e.target.textContent = 'Enviando...';
+                const result = await postToGoogleSheets('finalizeSolicitud', { solicitudId: id, responsable: responsableName });
+                if (result.success) {
+                    showNotification('Solicitud finalizada con éxito.', 'success');
+                    loadData();
+                } else {
+                    showNotification('Error al finalizar la solicitud.', 'error');
+                    e.target.disabled = false;
+                    e.target.textContent = 'Finalizar';
+                }
+            });
+        });
+    }
+
+    function renderUsuariosDisponiblesSelect() {
+        const select = elements.disponibilidadUserSelect;
+        select.innerHTML = allUsuariosDisponibles.map(user => `<option value="${user.ID}">${user.Nombre}</option>`).join('');
+    }
+
+    function renderCalendar() {
+        const userId = elements.disponibilidadUserSelect.value;
+        selectedDates = allDisponibilidad[userId] ? [...allDisponibilidad[userId]] : [];
+        elements.calendar.innerHTML = '';
+        elements.currentMonthYear.textContent = currentDisponibilidadMonth.toLocaleString('es-ES', { month: 'long', year: 'numeric' });
+
+        const firstDayOfMonth = new Date(currentDisponibilidadMonth.getFullYear(), currentDisponibilidadMonth.getMonth(), 1);
+        const lastDayOfMonth = new Date(currentDisponibilidadMonth.getFullYear(), currentDisponibilidadMonth.getMonth() + 1, 0);
+
+        for (let i = 0; i < firstDayOfMonth.getDay(); i++) {
+            const emptyCell = document.createElement('div');
+            elements.calendar.appendChild(emptyCell);
+        }
+
+        for (let date = 1; date <= lastDayOfMonth.getDate(); date++) {
+            const dateCell = document.createElement('button');
+            const formattedDate = `${currentDisponibilidadMonth.getFullYear()}-${(currentDisponibilidadMonth.getMonth() + 1).toString().padStart(2, '0')}-${date.toString().padStart(2, '0')}`;
+            dateCell.textContent = date;
+            dateCell.dataset.date = formattedDate;
+            dateCell.className = `p-2 rounded-md transition-colors w-full text-center hover:bg-red-200`;
+
+            const isSelected = selectedDates.includes(formattedDate);
+            if (isSelected) {
+                dateCell.classList.add('bg-red-400', 'text-white', 'hover:bg-red-500');
+            } else {
+                dateCell.classList.add('bg-white', 'text-gray-700', 'hover:bg-gray-100');
+            }
+
+            dateCell.addEventListener('click', () => {
+                const index = selectedDates.indexOf(formattedDate);
+                if (index > -1) {
+                    selectedDates.splice(index, 1);
+                    dateCell.classList.remove('bg-red-400', 'text-white');
+                    dateCell.classList.add('bg-white', 'text-gray-700');
+                } else {
+                    selectedDates.push(formattedDate);
+                    dateCell.classList.remove('bg-white', 'text-gray-700');
+                    dateCell.classList.add('bg-red-400', 'text-white');
                 }
             });
 
-            if (Object.keys(selectedProducts).length === 0) {
-                showNotification('Por favor, ingresa una cantidad para al menos un producto.', 'error');
-                return;
-            }
+            elements.calendar.appendChild(dateCell);
+        }
+    }
 
-            const solicitudData = {
-                date: elements.solicitudDate.value,
-                type: elements.solicitudType.value,
-                location: elements.solicitudLocation.value,
-                products: selectedProducts,
-                comments: elements.solicitudComments.value,
-                user: elements.solicitudUser.value,
-                email: elements.solicitudEmail.value,
-                userId: currentUser.id
-            };
-            const result = await postToGoogleSheets('addSolicitud', solicitudData);
-            if (result.success) {
-                showNotification('Solicitud agregada correctamente.', 'success');
-                elements.solicitudModal.classList.add('hidden');
-                elements.solicitudForm.reset();
-                loadData();
-            } else {
-                showNotification('Error al enviar la solicitud. Inténtalo de nuevo.', 'error');
+    elements.prevMonthBtn.addEventListener('click', () => {
+        currentDisponibilidadMonth.setMonth(currentDisponibilidadMonth.getMonth() - 1);
+        renderCalendar();
+    });
+
+    elements.nextMonthBtn.addEventListener('click', () => {
+        currentDisponibilidadMonth.setMonth(currentDisponibilidadMonth.getMonth() + 1);
+        renderCalendar();
+    });
+
+    elements.disponibilidadUserSelect.addEventListener('change', renderCalendar);
+    elements.saveDisponibilidadBtn.addEventListener('click', async () => {
+        const userId = elements.disponibilidadUserSelect.value;
+        const result = await postToGoogleSheets('setDisponibilidad', { userId: userId, unavailableDates: selectedDates });
+        if (result.success) {
+            showNotification('Disponibilidad guardada con éxito.', 'success');
+            await loadData();
+            renderCalendar();
+        } else {
+            showNotification('Error al guardar la disponibilidad.', 'error');
+        }
+    });
+
+    elements.reportFilter.addEventListener('change', renderReportTable);
+    elements.loginButton.addEventListener('click', () => elements.loginModal.classList.remove('hidden'));
+    elements.closeLoginModalBtn.addEventListener('click', () => elements.loginModal.classList.add('hidden'));
+    elements.loginForm.addEventListener('submit', handleLogin);
+    elements.signOutButton.addEventListener('click', () => {
+        currentUser = { email: null, name: null, nivel: null, isAuthenticated: false, id: null };
+        elements.userNameDisplay.textContent = '';
+        elements.userNameDisplay.classList.add('hidden');
+        elements.loginButton.classList.remove('hidden');
+        elements.signOutButton.classList.add('hidden');
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+        switchView('solicitudesView');
+        loadData();
+        showNotification('Sesión cerrada.', 'info');
+    });
+
+    elements.menuBtn.addEventListener('click', toggleSidebar);
+    elements.closeSidebarBtn.addEventListener('click', toggleSidebar);
+    elements.backdrop.addEventListener('click', toggleSidebar);
+
+    elements.solicitudesTab.addEventListener('click', (e) => { e.preventDefault(); switchView('solicitudesView'); renderSolicitudes(); });
+    if (elements.dashboardTab) { elements.dashboardTab.addEventListener('click', (e) => { e.preventDefault(); switchView('dashboardView'); updateDashboard(); }); }
+    if (elements.reportesTab) { elements.reportesTab.addEventListener('click', (e) => { e.preventDefault(); switchView('reportesView'); renderReportTable(); }); }
+    if (elements.configTab) { elements.configTab.addEventListener('click', (e) => { e.preventDefault(); switchView('configView'); }); }
+    if (elements.disponibilidadTab) { elements.disponibilidadTab.addEventListener('click', (e) => { e.preventDefault(); switchView('disponibilidadView'); renderCalendar(); }); }
+
+    elements.addSolicitudBtn.addEventListener('click', () => {
+        if (!currentUser.isAuthenticated) {
+            showNotification('Debes iniciar sesión para hacer una solicitud.', 'error');
+            return;
+        }
+        elements.solicitudUser.value = currentUser.name;
+        elements.solicitudEmail.value = currentUser.email;
+        elements.solicitudDate.valueAsDate = new Date();
+        elements.solicitudModal.classList.remove('hidden');
+    });
+    elements.closeModalBtn.addEventListener('click', () => elements.solicitudModal.classList.add('hidden'));
+    elements.cancelFormBtn.addEventListener('click', () => elements.solicitudModal.classList.add('hidden'));
+
+    elements.solicitudForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const selectedProducts = {};
+        document.querySelectorAll('#productosContainer input[type="number"]').forEach(input => {
+            const productName = input.id.replace('cantidad-', '');
+            const quantity = parseInt(input.value);
+            if (quantity > 0) {
+                selectedProducts[productName] = quantity;
             }
         });
 
-        async function postToGoogleSheets(action, data) {
-            try {
-                const formData = new FormData();
-                formData.append('action', action);
-                formData.append('data', JSON.stringify(data));
-                const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
-                    method: 'POST',
-                    body: formData,
-                    redirect: 'follow',
-                });
-                const result = await response.json();
-                return result;
-            } catch (error) {
-                console.error('Error en postToGoogleSheets:', error);
-                return { success: false, error: 'Error de red. Inténtalo de nuevo.' };
-            }
+        if (Object.keys(selectedProducts).length === 0) {
+            showNotification('Por favor, ingresa una cantidad para al menos un producto.', 'error');
+            return;
         }
 
-        window.addEventListener('load', loadData);
+        const solicitudData = {
+            date: elements.solicitudDate.value,
+            type: elements.solicitudType.value,
+            location: elements.solicitudLocation.value,
+            products: selectedProducts,
+            comments: elements.solicitudComments.value,
+            user: elements.solicitudUser.value,
+            email: elements.solicitudEmail.value,
+            userId: currentUser.id
+        };
+        const result = await postToGoogleSheets('addSolicitud', solicitudData);
+        if (result.success) {
+            showNotification('Solicitud agregada correctamente.', 'success');
+            elements.solicitudModal.classList.add('hidden');
+            elements.solicitudForm.reset();
+            loadData();
+        } else {
+            showNotification('Error al enviar la solicitud. Inténtalo de nuevo.', 'error');
+        }
+    });
+
+    async function postToGoogleSheets(action, data) {
+        try {
+            const formData = new FormData();
+            formData.append('action', action);
+            formData.append('data', JSON.stringify(data));
+            const response = await fetch(GOOGLE_APPS_SCRIPT_URL, {
+                method: 'POST',
+                body: formData,
+                redirect: 'follow',
+            });
+            const result = await response.json();
+            return result;
+        } catch (error) {
+            console.error('Error en postToGoogleSheets:', error);
+            return { success: false, error: 'Error de red. Inténtalo de nuevo.' };
+        }
+    }
+
+    window.addEventListener('load', loadData);
     </script>
 </body>
 </html>
