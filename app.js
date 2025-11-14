@@ -76,6 +76,16 @@ const elements = {
     detailModalContent: document.getElementById('detailModalContent'),
 };
 
+/**
+ * Función de inicialización: Muestra solo el modal de login al cargar la página.
+ */
+function initializeApp() {
+    elements.loadingScreen.classList.add('hidden');
+    elements.loginModal.classList.remove('hidden');
+    elements.app.classList.add('hidden');
+    elements.sidebar.classList.add('hidden');
+}
+
 // Update clock
 function updateClock() {
     const now = new Date();
@@ -145,7 +155,7 @@ async function checkForNewSolicitudes() {
                 const newCount = currentCount - lastSolicitudCount;
                 showNotification(`¡${newCount} nueva(s) solicitud(es) recibida(s)!`, 'info');
                 playNotificationSound();
-                await loadData();
+                await loadData(); // Recarga datos si hay nuevas, pero la app ya está visible
             }
             
             lastSolicitudCount = currentCount;
@@ -245,11 +255,14 @@ async function handleLogin(e) {
                 isAuthenticated: true,
             };
             
-            elements.loginModal.classList.add('hidden');
+            elements.loginModal.classList.add('hidden'); // Oculta el modal de login
+            
             elements.userNameText.textContent = `${currentUser.name} (Nivel ${currentUser.nivel})`;
             elements.userNameDisplay.classList.remove('hidden');
-            setupAppForUserRole();
-            await loadData();
+            
+            setupAppForUserRole(); // Prepara los botones y pestañas de la app
+            
+            await loadData(); // Llama a loadData, que mostrará la app
             
             if (currentUser.nivel == 1) {
                 startNotificationCheck();
@@ -288,8 +301,9 @@ function setupAppForUserRole() {
 }
 
 async function loadData() {
-    elements.loadingScreen.classList.remove('hidden');
-    elements.app.classList.add('hidden');
+    elements.loadingScreen.classList.remove('hidden'); // Muestra la pantalla de carga
+    elements.app.classList.add('hidden'); // Oculta la app (por si acaso)
+    elements.sidebar.classList.add('hidden'); // Oculta el sidebar
     
     try {
         let solicitudEmailParam = 'guest';
@@ -349,8 +363,9 @@ async function loadData() {
         console.error('Error al cargar datos:', error);
         showNotification('Error al cargar datos: ' + error.message, 'error');
     } finally {
-        elements.loadingScreen.classList.add('hidden');
-        elements.app.classList.remove('hidden');
+        elements.loadingScreen.classList.add('hidden'); // Oculta la carga
+        elements.app.classList.remove('hidden'); // Muestra el contenido principal
+        elements.sidebar.classList.remove('hidden'); // Muestra el sidebar
     }
 }
 
@@ -1008,13 +1023,10 @@ function renderProduccionTable() {
         );
     }
     
-    // **** INICIO DE MODIFICACIÓN ****
-    // Ajustar el colspan al nuevo número de columnas (7)
     if (solicitudesToRender.length === 0) {
         tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-gray-500">No hay pedidos de producción para mostrar.</td></tr>';
         return;
     }
-    // **** FIN DE MODIFICACIÓN ****
     
     solicitudesToRender.forEach(solicitud => {
         const row = document.createElement('tr');
@@ -1035,14 +1047,12 @@ function renderProduccionTable() {
         const formattedDate = solicitud.Fecha ? solicitud.Fecha.split('T')[0] : 'N/A';
         const productosHtml = formatProductosList(solicitud.Productos);
         
-        // **** INICIO DE MODIFICACIÓN ****
-        // Se eliminaron las columnas de Ubicación y Tipo.
-        // Se agregó la columna Destino (solicitud.Comentarios) como columna principal.
         row.innerHTML = `
             <td class="px-4 py-4 text-sm font-medium text-gray-900">${solicitud.ID}</td>
             <td class="px-4 py-4 text-sm text-gray-600">${formattedDate}</td>
             <td class="px-4 py-4 text-sm text-gray-600">${solicitud.Usuario}</td>
-            <td class="px-4 py-4 text-sm text-gray-600">${solicitud.Comentarios || 'N/A'}</td> <td class="px-4 py-4 text-sm text-gray-600">${productosHtml}</td>
+            <td class="px-4 py-4 text-sm text-gray-600">${solicitud.Comentarios || 'N/A'}</td>
+            <td class="px-4 py-4 text-sm text-gray-600">${productosHtml}</td>
             <td class="px-4 py-4">
                 <span class="status-badge ${statusClass}">
                     <i class="fas ${statusIcon} mr-1"></i>${statusText}
@@ -1052,7 +1062,6 @@ function renderProduccionTable() {
                 ${actionButtonHtml}
             </td>
         `;
-        // **** FIN DE MODIFICACIÓN ****
         
         tbody.appendChild(row);
     });
@@ -1200,13 +1209,24 @@ elements.loginForm.addEventListener('submit', handleLogin);
 elements.signOutButton.addEventListener('click', () => {
     stopNotificationCheck();
     currentUser = { email: null, name: null, nivel: null, isAuthenticated: false, id: null };
+    
+    // Oculta la app y el sidebar
+    elements.app.classList.add('hidden');
+    elements.sidebar.classList.add('hidden');
+    
+    // Muestra el modal de login
+    elements.loginModal.classList.remove('hidden');
+    
+    // Resetea el formulario de login
+    elements.emailInput.value = '';
+    elements.passwordInput.value = '';
+    elements.loginMessage.textContent = '';
+    
+    // Resetea los botones del sidebar para el próximo login
     elements.userNameDisplay.classList.add('hidden');
     elements.loginButton.classList.remove('hidden');
     elements.signOutButton.classList.add('hidden');
-    document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
-    document.querySelectorAll('.produccion-only').forEach(el => el.classList.add('hidden'));
-    switchView('solicitudesView');
-    loadData();
+    
     showNotification('Sesión cerrada correctamente.', 'info');
 });
 
@@ -1253,6 +1273,8 @@ if (elements.disponibilidadTab) {
 }
 
 elements.addSolicitudBtn.addEventListener('click', () => {
+    // La app no debería ser visible si no está autenticado,
+    // pero esta comprobación se mantiene por seguridad.
     if (!currentUser.isAuthenticated) {
         showNotification('Debes iniciar sesión para hacer una solicitud.', 'error');
         return;
@@ -1323,7 +1345,7 @@ elements.solicitudForm.addEventListener('submit', async (e) => {
         showNotification(isEdit ? 'Solicitud actualizada correctamente.' : 'Solicitud agregada correctamente.', 'success');
         elements.solicitudModal.classList.add('hidden');
         elements.solicitudForm.reset();
-        loadData();
+        loadData(); // Recarga los datos después de agregar/editar
     } else {
         showNotification('Error al procesar la solicitud. Inténtalo de nuevo.', 'error');
     }
@@ -1332,4 +1354,5 @@ elements.solicitudForm.addEventListener('submit', async (e) => {
     submitBtn.innerHTML = `<i class="fas fa-paper-plane mr-2"></i>${isEdit ? 'Actualizar' : 'Enviar'} Solicitud`;
 });
 
-window.addEventListener('load', loadData);
+// Se cambia el listener 'load' para llamar a initializeApp en lugar de loadData
+window.addEventListener('load', initializeApp);
