@@ -8,6 +8,8 @@ let currentUser = { email: null, name: null, nivel: null, isAuthenticated: false
 let charts = {};
 let currentDisponibilidadMonth = new Date();
 let selectedDates = [];
+let lastSolicitudCount = 0;
+let notificationCheckInterval = null;
 
 const elements = {
     loadingScreen: document.getElementById('loadingScreen'),
@@ -25,10 +27,12 @@ const elements = {
     solicitudesTab: document.getElementById('solicitudesTab'),
     dashboardTab: document.getElementById('dashboardTab'),
     reportesTab: document.getElementById('reportesTab'),
+    produccionTab: document.getElementById('produccionTab'),
     disponibilidadTab: document.getElementById('disponibilidadTab'),
     solicitudesView: document.getElementById('solicitudesView'),
     dashboardView: document.getElementById('dashboardView'),
     reportesView: document.getElementById('reportesView'),
+    produccionView: document.getElementById('produccionView'),
     disponibilidadView: document.getElementById('disponibilidadView'),
     solicitudesList: document.getElementById('solicitudesList'),
     addSolicitudBtn: document.getElementById('addSolicitudBtn'),
@@ -51,6 +55,9 @@ const elements = {
     reportTableBody: document.getElementById('reportTableBody'),
     reportFilter: document.getElementById('reportFilter'),
     searchInput: document.getElementById('searchInput'),
+    produccionTableBody: document.getElementById('produccionTableBody'),
+    produccionFilter: document.getElementById('produccionFilter'),
+    produccionSearchInput: document.getElementById('produccionSearchInput'),
     sidebar: document.getElementById('sidebar'),
     menuBtn: document.getElementById('menuBtn'),
     closeSidebarBtn: document.getElementById('closeSidebarBtn'),
@@ -109,6 +116,65 @@ function showNotification(message, type = 'info') {
         notification.style.opacity = '0';
         setTimeout(() => notification.remove(), 300);
     }, 4000);
+}
+
+function startNotificationCheck() {
+    if (currentUser.nivel == 1) {
+        notificationCheckInterval = setInterval(async () => {
+            await checkForNewSolicitudes();
+        }, 30000);
+    }
+}
+
+function stopNotificationCheck() {
+    if (notificationCheckInterval) {
+        clearInterval(notificationCheckInterval);
+        notificationCheckInterval = null;
+    }
+}
+
+async function checkForNewSolicitudes() {
+    try {
+        const response = await fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=admin`);
+        const result = await response.json();
+        
+        if (result.success) {
+            const currentCount = result.data.length;
+            
+            if (lastSolicitudCount > 0 && currentCount > lastSolicitudCount) {
+                const newCount = currentCount - lastSolicitudCount;
+                showNotification(`¡${newCount} nueva(s) solicitud(es) recibida(s)!`, 'info');
+                playNotificationSound();
+                await loadData();
+            }
+            
+            lastSolicitudCount = currentCount;
+        }
+    } catch (error) {
+        console.error('Error al verificar nuevas solicitudes:', error);
+    }
+}
+
+function playNotificationSound() {
+    try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const oscillator = audioContext.createOscillator();
+        const gainNode = audioContext.createGain();
+        
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+        
+        oscillator.frequency.value = 800;
+        oscillator.type = 'sine';
+        
+        gainNode.gain.setValueAtTime(0.3, audioContext.currentTime);
+        gainNode.gain.exponentialRampToValueAtTime(0.01, audioContext.currentTime + 0.5);
+        
+        oscillator.start(audioContext.currentTime);
+        oscillator.stop(audioContext.currentTime + 0.5);
+    } catch (e) {
+        console.log('No se pudo reproducir el sonido de notificación');
+    }
 }
 
 function switchView(viewId) {
@@ -184,6 +250,11 @@ async function handleLogin(e) {
             elements.userNameDisplay.classList.remove('hidden');
             setupAppForUserRole();
             await loadData();
+            
+            if (currentUser.nivel == 1) {
+                startNotificationCheck();
+            }
+            
             showNotification('¡Bienvenido! Sesión iniciada correctamente.', 'success');
         } else {
             elements.loginMessage.textContent = result.error || 'Credenciales inválidas.';
@@ -203,9 +274,15 @@ function setupAppForUserRole() {
     
     if (currentUser.nivel == 1) {
         document.querySelectorAll('.admin-only').forEach(el => el.classList.remove('hidden'));
+        document.querySelectorAll('.produccion-only').forEach(el => el.classList.remove('hidden'));
         switchView('dashboardView');
+    } else if (currentUser.nivel == 3) {
+        document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.produccion-only').forEach(el => el.classList.remove('hidden'));
+        switchView('solicitudesView');
     } else {
         document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+        document.querySelectorAll('.produccion-only').forEach(el => el.classList.add('hidden'));
         switchView('solicitudesView');
     }
 }
@@ -215,9 +292,18 @@ async function loadData() {
     elements.app.classList.add('hidden');
     
     try {
+        let solicitudEmailParam = 'guest';
+        if (currentUser.isAuthenticated) {
+            if (currentUser.nivel == 1 || currentUser.nivel == 3) {
+                solicitudEmailParam = 'admin'; 
+            } else {
+                solicitudEmailParam = currentUser.email;
+            }
+        }
+
         const [productosResponse, solicitudesResponse, usuariosDisponiblesResponse, disponibilidadResponse] = await Promise.all([
             fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getProductos`),
-            fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=${currentUser.isAuthenticated ? currentUser.email : 'guest'}`),
+            fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getSolicitudes&userEmail=${solicitudEmailParam}`),
             fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getUsuariosDisponibles`),
             fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getDisponibilidad`)
         ]);
@@ -231,6 +317,11 @@ async function loadData() {
         const solicitudesData = await solicitudesResponse.json();
         if (solicitudesData.success) {
             allSolicitudes = solicitudesData.data;
+            
+            if (currentUser.nivel == 1) {
+                lastSolicitudCount = allSolicitudes.length;
+            }
+            
             renderSolicitudes();
         }
         
@@ -249,6 +340,9 @@ async function loadData() {
             updateDashboard();
             renderReportTable();
             renderCalendar();
+            renderProduccionTable();
+        } else if (currentUser.nivel == 3) {
+            renderProduccionTable();
         }
         
     } catch (error) {
@@ -746,6 +840,30 @@ function renderTrendChart() {
     });
 }
 
+/**
+ * Helper function to format the product list for tables.
+ */
+function formatProductosList(productosJSON) {
+    try {
+        const productos = JSON.parse(productosJSON || '{}');
+        const entries = Object.entries(productos);
+        
+        if (entries.length === 0) {
+            return '<span class="text-gray-400 text-xs">N/A</span>';
+        }
+        
+        return entries.map(([nombre, cantidad]) => `
+            <div class="text-xs">
+                <span class="font-medium text-gray-800">${nombre}:</span>
+                <span class="text-purple-600 font-bold">${cantidad}</span>
+            </div>
+        `).join('');
+    } catch (e) {
+        console.error("Error parsing Productos JSON:", e);
+        return '<span class="text-red-500 text-xs">Error</span>';
+    }
+}
+
 function renderReportTable() {
     const tbody = elements.reportTableBody;
     tbody.innerHTML = '';
@@ -769,7 +887,7 @@ function renderReportTable() {
     }
     
     if (solicitudesToRender.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="9" class="text-center p-8 text-gray-500">No hay datos de solicitudes para el reporte.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center p-8 text-gray-500">No hay datos de solicitudes para el reporte.</td></tr>';
         return;
     }
     
@@ -800,6 +918,7 @@ function renderReportTable() {
         ` : `<span class="text-gray-400 text-sm">-</span>`;
         
         const formattedDate = solicitud.Fecha ? solicitud.Fecha.split('T')[0] : 'N/A';
+        const productosHtml = formatProductosList(solicitud.Productos);
         
         row.innerHTML = `
             <td class="px-4 py-4 text-sm font-medium text-gray-900">${solicitud.ID}</td>
@@ -808,6 +927,7 @@ function renderReportTable() {
             <td class="px-4 py-4 text-sm text-gray-600">${solicitud.Ubicacion}</td>
             <td class="px-4 py-4 text-sm text-gray-600 hidden lg:table-cell">${solicitud.Tipo}</td>
             <td class="px-4 py-4 text-sm text-gray-600 hidden xl:table-cell">${solicitud.Comentarios || 'N/A'}</td>
+            <td class="px-4 py-4 text-sm text-gray-600">${productosHtml}</td>
             <td class="px-4 py-4">
                 <span class="status-badge ${statusClass}">
                     <i class="fas ${statusIcon} mr-1"></i>${statusText}
@@ -854,6 +974,103 @@ function renderReportTable() {
                 loadData();
             } else {
                 showNotification('Error al finalizar la solicitud.', 'error');
+                e.currentTarget.disabled = false;
+                e.currentTarget.innerHTML = '<i class="fas fa-check mr-1"></i>Finalizar';
+            }
+        });
+    });
+}
+
+function renderProduccionTable() {
+    if (!elements.produccionTableBody) return;
+    
+    const tbody = elements.produccionTableBody;
+    tbody.innerHTML = '';
+    
+    let solicitudesToRender = allSolicitudes.filter(sol => 
+        sol.Tipo === 'Pedidos' && sol.Ubicacion === 'Copan'
+    );
+    
+    const filterValue = elements.produccionFilter ? elements.produccionFilter.value : 'all';
+    
+    if (filterValue === 'active') {
+        solicitudesToRender = solicitudesToRender.filter(sol => sol.Activa === true);
+    } else if (filterValue === 'finalized') {
+        solicitudesToRender = solicitudesToRender.filter(sol => sol.Activa === false);
+    }
+    
+    const searchTerm = elements.produccionSearchInput ? elements.produccionSearchInput.value.toLowerCase().trim() : '';
+    if (searchTerm) {
+        solicitudesToRender = solicitudesToRender.filter(sol => 
+            sol.ID.toLowerCase().includes(searchTerm) ||
+            sol.Usuario.toLowerCase().includes(searchTerm) ||
+            (sol.Comentarios && sol.Comentarios.toLowerCase().includes(searchTerm))
+        );
+    }
+    
+    // **** INICIO DE MODIFICACIÓN ****
+    // Ajustar el colspan al nuevo número de columnas (7)
+    if (solicitudesToRender.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center p-8 text-gray-500">No hay pedidos de producción para mostrar.</td></tr>';
+        return;
+    }
+    // **** FIN DE MODIFICACIÓN ****
+    
+    solicitudesToRender.forEach(solicitud => {
+        const row = document.createElement('tr');
+        row.className = 'table-row-hover';
+        
+        const statusClass = solicitud.Activa ? 'status-active' : 'status-inactive';
+        const statusText = solicitud.Activa ? 'Activa' : 'Finalizada';
+        const statusIcon = solicitud.Activa ? 'fa-check-circle' : 'fa-times-circle';
+        
+        const actionButtonHtml = solicitud.Activa && currentUser.nivel == 3 ? `
+            <button data-id="${solicitud.ID}" class="finalize-produccion-btn bg-green-500 text-white py-2 px-4 rounded-lg text-sm font-medium hover:bg-green-600 transition-all shadow-md w-full">
+                <i class="fas fa-check mr-1"></i>Finalizar
+            </button>
+        ` : solicitud.Activa && currentUser.nivel == 1 ? `
+            <span class="text-gray-400 text-sm">Solo visualización</span>
+        ` : `<span class="text-gray-400 text-sm">-</span>`;
+        
+        const formattedDate = solicitud.Fecha ? solicitud.Fecha.split('T')[0] : 'N/A';
+        const productosHtml = formatProductosList(solicitud.Productos);
+        
+        // **** INICIO DE MODIFICACIÓN ****
+        // Se eliminaron las columnas de Ubicación y Tipo.
+        // Se agregó la columna Destino (solicitud.Comentarios) como columna principal.
+        row.innerHTML = `
+            <td class="px-4 py-4 text-sm font-medium text-gray-900">${solicitud.ID}</td>
+            <td class="px-4 py-4 text-sm text-gray-600">${formattedDate}</td>
+            <td class="px-4 py-4 text-sm text-gray-600">${solicitud.Usuario}</td>
+            <td class="px-4 py-4 text-sm text-gray-600">${solicitud.Comentarios || 'N/A'}</td> <td class="px-4 py-4 text-sm text-gray-600">${productosHtml}</td>
+            <td class="px-4 py-4">
+                <span class="status-badge ${statusClass}">
+                    <i class="fas ${statusIcon} mr-1"></i>${statusText}
+                </span>
+            </td>
+            <td class="px-4 py-4 text-center">
+                ${actionButtonHtml}
+            </td>
+        `;
+        // **** FIN DE MODIFICACIÓN ****
+        
+        tbody.appendChild(row);
+    });
+    
+    document.querySelectorAll('.finalize-produccion-btn').forEach(button => {
+        button.addEventListener('click', async (e) => {
+            const id = e.currentTarget.dataset.id;
+            
+            e.currentTarget.disabled = true;
+            e.currentTarget.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i>Procesando...';
+            
+            const result = await postToGoogleSheets('finalizeSolicitud', { solicitudId: id, responsable: currentUser.name });
+            
+            if (result.success) {
+                showNotification('Pedido finalizado con éxito.', 'success');
+                loadData();
+            } else {
+                showNotification('Error al finalizar el pedido.', 'error');
                 e.currentTarget.disabled = false;
                 e.currentTarget.innerHTML = '<i class="fas fa-check mr-1"></i>Finalizar';
             }
@@ -968,16 +1185,26 @@ elements.saveDisponibilidadBtn.addEventListener('click', async () => {
 elements.reportFilter.addEventListener('change', renderReportTable);
 elements.searchInput.addEventListener('input', renderReportTable);
 
+if (elements.produccionFilter) {
+    elements.produccionFilter.addEventListener('change', renderProduccionTable);
+}
+
+if (elements.produccionSearchInput) {
+    elements.produccionSearchInput.addEventListener('input', renderProduccionTable);
+}
+
 elements.loginButton.addEventListener('click', () => elements.loginModal.classList.remove('hidden'));
 elements.closeLoginModalBtn.addEventListener('click', () => elements.loginModal.classList.add('hidden'));
 elements.loginForm.addEventListener('submit', handleLogin);
 
 elements.signOutButton.addEventListener('click', () => {
+    stopNotificationCheck();
     currentUser = { email: null, name: null, nivel: null, isAuthenticated: false, id: null };
     elements.userNameDisplay.classList.add('hidden');
     elements.loginButton.classList.remove('hidden');
     elements.signOutButton.classList.add('hidden');
     document.querySelectorAll('.admin-only').forEach(el => el.classList.add('hidden'));
+    document.querySelectorAll('.produccion-only').forEach(el => el.classList.add('hidden'));
     switchView('solicitudesView');
     loadData();
     showNotification('Sesión cerrada correctamente.', 'info');
@@ -1006,6 +1233,14 @@ if (elements.reportesTab) {
         e.preventDefault(); 
         switchView('reportesView'); 
         renderReportTable(); 
+    });
+}
+
+if (elements.produccionTab) {
+    elements.produccionTab.addEventListener('click', (e) => { 
+        e.preventDefault(); 
+        switchView('produccionView'); 
+        renderProduccionTable(); 
     });
 }
 
