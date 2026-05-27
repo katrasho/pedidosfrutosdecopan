@@ -53,6 +53,12 @@
             0%, 100% { transform: scale(1); }
             50% { transform: scale(1.05); }
         }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
 
         .animate-fadeIn {
             animation: fadeIn 0.5s ease-out;
@@ -60,6 +66,10 @@
 
         .animate-slideIn {
             animation: slideIn 0.3s ease-out;
+        }
+        
+        .animate-shake {
+            animation: shake 0.3s ease-in-out;
         }
 
         .glass-effect {
@@ -149,6 +159,15 @@
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
             outline: none;
+        }
+        
+        .input-modern.error {
+            border-color: #ef4444;
+            animation: shake 0.3s ease-in-out;
+        }
+        
+        .input-modern.success {
+            border-color: #10b981;
         }
 
         .notification-enter {
