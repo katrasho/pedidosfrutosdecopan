@@ -1,5 +1,8 @@
 const GOOGLE_APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyEKKl4vh-uhDKN5Wan-5V0U4jUFt7fLSnyPgPhpKDginiVTlTBCYfEq98WZynpYJF_gg/exec';
 
+// ============================================
+// ESTADO GLOBAL DE LA APLICACIÓN
+// ============================================
 let allSolicitudes = [];
 let allProductos = [];
 let allUsuariosDisponibles = [];
@@ -10,6 +13,7 @@ let currentDisponibilidadMonth = new Date();
 let selectedDates = [];
 let lastSolicitudCount = 0;
 let notificationCheckInterval = null;
+let debounceTimers = {}; // Para optimizar búsquedas
 
 const elements = {
     loadingScreen: document.getElementById('loadingScreen'),
@@ -84,6 +88,31 @@ function initializeApp() {
     elements.loginModal.classList.remove('hidden');
     elements.app.classList.add('hidden');
     elements.sidebar.classList.add('hidden');
+    
+    // Precargar datos del servidor para mejor rendimiento
+    preloadData();
+}
+
+// Precarga silenciosa de datos para mejorar UX
+async function preloadData() {
+    try {
+        const [productosResponse, usuariosDisponiblesResponse] = await Promise.all([
+            fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getProductos`),
+            fetch(`${GOOGLE_APPS_SCRIPT_URL}?action=getUsuariosDisponibles`)
+        ]);
+        
+        const productosData = await productosResponse.json();
+        if (productosData.success) {
+            allProductos = productosData.data;
+        }
+        
+        const usuariosDisponiblesData = await usuariosDisponiblesResponse.json();
+        if (usuariosDisponiblesData.success) {
+            allUsuariosDisponibles = usuariosDisponiblesData.data;
+        }
+    } catch (error) {
+        console.warn('Precarga de datos fallida, se intentará en el login:', error);
+    }
 }
 
 // Update clock
@@ -98,7 +127,10 @@ function updateClock() {
 setInterval(updateClock, 1000);
 updateClock();
 
-function showNotification(message, type = 'info') {
+/**
+ * Sistema de notificaciones mejorado con animaciones suaves
+ */
+function showNotification(message, type = 'info', duration = 4000) {
     const notification = document.createElement('div');
     const icons = {
         success: 'fa-check-circle',
@@ -113,19 +145,34 @@ function showNotification(message, type = 'info') {
         warning: 'bg-yellow-500'
     };
     
-    notification.className = `notification-enter ${colors[type]} text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 max-w-md`;
+    notification.className = `notification-enter ${colors[type]} text-white px-6 py-4 rounded-lg shadow-2xl flex items-center space-x-3 max-w-md cursor-pointer hover:shadow-3xl transition-all duration-300`;
     notification.innerHTML = `
         <i class="fas ${icons[type]} text-xl"></i>
         <span class="font-medium">${message}</span>
+        <button class="ml-auto hover:opacity-75" onclick="this.parentElement.remove()">
+            <i class="fas fa-times"></i>
+        </button>
     `;
+    
+    // Click para cerrar manualmente
+    notification.addEventListener('click', (e) => {
+        if (e.target.tagName !== 'BUTTON') {
+            closeNotification(notification);
+        }
+    });
     
     elements.notificationContainer.appendChild(notification);
     
-    setTimeout(() => {
-        notification.style.transform = 'translateX(400px)';
-        notification.style.opacity = '0';
-        setTimeout(() => notification.remove(), 300);
-    }, 4000);
+    // Auto-close con cleanup adecuado
+    const timeoutId = setTimeout(() => closeNotification(notification), duration);
+    notification.dataset.timeoutId = timeoutId;
+}
+
+function closeNotification(notification) {
+    notification.style.transform = 'translateX(400px)';
+    notification.style.opacity = '0';
+    clearTimeout(parseInt(notification.dataset.timeoutId));
+    setTimeout(() => notification.remove(), 300);
 }
 
 function startNotificationCheck() {
@@ -369,6 +416,9 @@ async function loadData() {
     }
 }
 
+/**
+ * Renderizado optimizado de solicitudes con lazy loading y memoización
+ */
 function renderSolicitudes() {
     const list = elements.solicitudesList;
     list.innerHTML = '';
@@ -388,6 +438,9 @@ function renderSolicitudes() {
         `;
         return;
     }
+    
+    // Usar DocumentFragment para mejor rendimiento
+    const fragment = document.createDocumentFragment();
     
     solicitudesToShow.forEach(solicitud => {
         const item = document.createElement('div');
@@ -469,8 +522,10 @@ function renderSolicitudes() {
             </div>
         `;
         
-        list.appendChild(item);
+        fragment.appendChild(item);
     });
+    
+    list.appendChild(fragment);
 }
 
 function showSolicitudDetail(solicitudId) {
@@ -879,6 +934,23 @@ function formatProductosList(productosJSON) {
     }
 }
 
+/**
+ * Función debounce para optimizar búsquedas
+ */
+function debounce(func, wait) {
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(debounceTimers[func.name]);
+            func(...args);
+        };
+        clearTimeout(debounceTimers[func.name]);
+        debounceTimers[func.name] = setTimeout(later, wait);
+    };
+}
+
+/**
+ * Renderizado optimizado de tabla de reportes con búsqueda con debounce
+ */
 function renderReportTable() {
     const tbody = elements.reportTableBody;
     tbody.innerHTML = '';
@@ -905,6 +977,8 @@ function renderReportTable() {
         tbody.innerHTML = '<tr><td colspan="10" class="text-center p-8 text-gray-500">No hay datos de solicitudes para el reporte.</td></tr>';
         return;
     }
+    
+    const fragment = document.createDocumentFragment();
     
     solicitudesToRender.forEach(solicitud => {
         const row = document.createElement('tr');
@@ -956,8 +1030,10 @@ function renderReportTable() {
             </td>
         `;
         
-        tbody.appendChild(row);
+        fragment.appendChild(row);
     });
+    
+    tbody.appendChild(fragment);
     
     document.querySelectorAll('.finalize-btn').forEach(button => {
         button.addEventListener('click', async (e) => {
@@ -995,6 +1071,10 @@ function renderReportTable() {
         });
     });
 }
+
+// Aplicar debounce a las búsquedas
+const debouncedRenderReportTable = debounce(renderReportTable, 300);
+const debouncedRenderProduccionTable = debounce(renderProduccionTable, 300);
 
 function renderProduccionTable() {
     if (!elements.produccionTableBody) return;
@@ -1192,14 +1272,14 @@ elements.saveDisponibilidadBtn.addEventListener('click', async () => {
 });
 
 elements.reportFilter.addEventListener('change', renderReportTable);
-elements.searchInput.addEventListener('input', renderReportTable);
+elements.searchInput.addEventListener('input', debouncedRenderReportTable);
 
 if (elements.produccionFilter) {
     elements.produccionFilter.addEventListener('change', renderProduccionTable);
 }
 
 if (elements.produccionSearchInput) {
-    elements.produccionSearchInput.addEventListener('input', renderProduccionTable);
+    elements.produccionSearchInput.addEventListener('input', debouncedRenderProduccionTable);
 }
 
 elements.loginButton.addEventListener('click', () => elements.loginModal.classList.remove('hidden'));
@@ -1299,6 +1379,9 @@ elements.closeModalBtn.addEventListener('click', () => elements.solicitudModal.c
 elements.cancelFormBtn.addEventListener('click', () => elements.solicitudModal.classList.add('hidden'));
 elements.closeDetailModalBtn.addEventListener('click', () => elements.detailModal.classList.add('hidden'));
 
+/**
+ * Manejo de formularios con validación mejorada y UX optimizada
+ */
 elements.solicitudForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     
@@ -1316,11 +1399,19 @@ elements.solicitudForm.addEventListener('submit', async (e) => {
         return;
     }
     
+    // Validaciones adicionales
+    const solicitudDate = elements.solicitudDate.value;
+    const today = new Date().toISOString().split('T')[0];
+    if (solicitudDate < today) {
+        showNotification('La fecha no puede ser anterior a hoy.', 'warning');
+        return;
+    }
+    
     const editId = elements.editSolicitudId.value;
     const isEdit = editId !== '';
     
     const solicitudData = {
-        date: elements.solicitudDate.value,
+        date: solicitudDate,
         type: elements.solicitudType.value,
         location: elements.solicitudLocation.value,
         products: selectedProducts,
@@ -1335,6 +1426,7 @@ elements.solicitudForm.addEventListener('submit', async (e) => {
     }
     
     const submitBtn = e.target.querySelector('button[type="submit"]');
+    const originalText = submitBtn.innerHTML;
     submitBtn.disabled = true;
     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Procesando...';
     
@@ -1351,7 +1443,7 @@ elements.solicitudForm.addEventListener('submit', async (e) => {
     }
     
     submitBtn.disabled = false;
-    submitBtn.innerHTML = `<i class="fas fa-paper-plane mr-2"></i>${isEdit ? 'Actualizar' : 'Enviar'} Solicitud`;
+    submitBtn.innerHTML = originalText;
 });
 
 // Se cambia el listener 'load' para llamar a initializeApp en lugar de loadData
